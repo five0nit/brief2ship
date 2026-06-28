@@ -1,6 +1,6 @@
 ---
-name: shipproof
-description: "ShipProof: run AI-assisted builds that ship with proof, not vibes — one-shot prompt, repo-first selection, maintainability gate, anti-slop finish, and receipts."
+name: brief2ship
+description: "Brief2Ship: turn one strong brief into a better first-pass AI build with repo-first selection, maintainability gate, anti-slop finish, and proof receipts."
 version: 0.2.0
 author: Hermes Agent
 license: MIT
@@ -10,9 +10,9 @@ metadata:
     tags: [build-workflow, repo-first, maintainability, ui-polish, anti-slop, execution]
 ---
 
-# ShipProof
+# Brief2Ship
 
-Use ShipProof for new builds, substantial prototypes, internal tools, landing pages, and customer-facing web work. Former internal name: Three-Tier Build Toolkit.
+Use Brief2Ship for new builds, substantial prototypes, internal tools, landing pages, and customer-facing web work. Former public/internal names: ShipProof and Three-Tier Build Toolkit.
 
 ## Core rule
 

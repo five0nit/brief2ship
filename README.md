@@ -1,19 +1,19 @@
-# ShipProof
+# Brief2Ship
 
-**AI builds that ship with proof, not vibes.**
+**One brief. Better build. Proof included.**
 
-ShipProof is a lean build standard for AI-assisted product work. It wraps the original three-tier workflow — repo-first selection, maintainability, and intentional finish — in a name people can remember, repeat, and adopt.
+Brief2Ship is a lean build standard for AI-assisted product work. It turns a strong one-shot brief into a shipped, verified artifact without making the user babysit a bloated process.
 
 ## What it is
 
-ShipProof is a **workflow standard**, not a giant framework.
+Brief2Ship is a **workflow standard**, not a giant framework.
 
 It helps an operator or agent do four things consistently:
 
 1. **Get a strong one-shot prompt**
 2. **Choose a base before building greenfield**
 3. **Reject brittle unreadable agent code**
-4. **Ship with proof, not vibes**
+4. **Turn the brief into a verified build**
 
 ## User experience
 
@@ -28,7 +28,7 @@ The user should not have to learn the internals.
 
 ## Internal workflow
 
-The public name is ShipProof. The operating model underneath stays intentionally simple: three internal tiers plus a final proof gate.
+The public name is Brief2Ship. The operating model underneath stays intentionally simple: one strong brief, three internal tiers, and a final proof gate.
 
 ### Tier 1 — Repo-first
 Search for the best existing repo, starter, tool, or template before building.
@@ -65,7 +65,7 @@ Most starter kits solve only one part of the build problem:
 - SaaS boilerplate
 - component library
 
-This toolkit is different.
+Brief2Ship is different.
 
 It is a **build operating standard** for AI-assisted delivery:
 - choose better starting points
@@ -75,19 +75,20 @@ It is a **build operating standard** for AI-assisted delivery:
 
 ## Why the name
 
-The old name described the internal mechanism. **ShipProof** sells the outcome:
+The old names described the internal mechanism or the final proof. **Brief2Ship** sells the full transformation:
 
-- **Ship** — the build gets to a usable artifact, not a planning loop
-- **Proof** — every delivery includes receipts: commands, checks, screenshots/logs, and known compromises
-- **Short + repeatable** — easier to say in prompts, docs, READMEs, and agent handoffs
+- **Brief** — the user gives one clear starting prompt, not a pile of process docs
+- **2** — direct path from intent to execution, with at most five targeted follow-ups
+- **Ship** — the result is a usable artifact with receipts, not a planning loop
+- **Memorable + searchable** — short enough for prompts, docs, repo names, and package names
 
 Use this line when explaining it publicly:
 
-> ShipProof is the lightweight operating standard for AI-assisted builds: pick the best base, keep the code maintainable, polish the UX, and prove it works.
+> Brief2Ship is the lightweight operating standard for AI-assisted builds: start from one strong brief, choose the best base, keep the code maintainable, polish the UX, and prove it works.
 
 ## What this repo includes
 
-- `skills/shipproof/SKILL.md` — Hermes/OpenClaw skill package
+- `skills/brief2ship/SKILL.md` — Hermes/OpenClaw skill package
 - `docs/how-it-works.md` — full breakdown of the workflow
 - `docs/lanes.md` — the 3 default build lanes
 - `docs/examples.md` — example prompts and execution patterns
@@ -150,10 +151,10 @@ bash scripts/install-skill.sh
 
 Then load:
 ```text
-shipproof
+brief2ship
 ```
 
-Backward-compatible skill name during migration: `three-tier-build-toolkit`.
+Backward-compatible skill names during migration: `shipproof`, `three-tier-build-toolkit`.
 
 ## Contributing
 
