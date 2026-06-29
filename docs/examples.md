@@ -60,3 +60,25 @@ It is giving a repeatable build discipline that improves:
 - maintainability
 - finish quality
 - verification
+
+---
+
+## Example 4 — Report / Document lane
+
+### Prompt
+> Create an executive QA report for a founder deciding whether a new AI-built landing page is ready to share. Use the local test logs, screenshots, browser QA output, and known compromises. Tone: direct, decision-ready, non-technical. Format: Markdown with a source appendix.
+
+### Likely flow
+- lane: Report / Document
+- source-first intake: collect logs, screenshots, commands, and open issues
+- choose report skeleton before prose
+- separate facts, assumptions, and recommendations
+- format for skimming: summary, findings table, risks, next actions
+- verify links/files and render Markdown tables cleanly
+
+### Receipt shape
+- report audience: founder
+- decision supported: ready to share / hold / fix first
+- sources used: logs, screenshots, QA output
+- checks run: Markdown/table/link review
+- known gaps: unverifiable claims or missing sources

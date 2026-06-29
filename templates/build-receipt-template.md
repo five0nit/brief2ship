@@ -2,8 +2,8 @@
 
 ## Build kickoff
 - goal:
-- primary user:
-- main action:
+- primary user / reader:
+- main action / decision supported:
 - lane:
 - constraints:
 
@@ -25,6 +25,7 @@
 
 ## Proof
 - preview URL / screenshot / logs:
+- report render / formatting check, if applicable:
 
 ## Known compromises
 - deferred items:

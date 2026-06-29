@@ -1,8 +1,8 @@
 # Default Lanes
 
-This toolkit intentionally ships with only **three** default lanes.
+This toolkit intentionally ships with only **four** default lanes.
 
-That is enough to reduce ambiguity without turning the system into a bloated category tree.
+That is enough to reduce ambiguity without turning the system into a bloated category tree. The fourth lane covers report/document work, because many AI-assisted outputs are not apps but decision artifacts that still need structure, evidence, formatting, and proof.
 
 ## 1. App
 
@@ -58,6 +58,32 @@ Use for:
 - landing page starters
 - lightweight marketing templates
 - component-driven sections
+
+## 4. Report / Document
+
+Use for:
+- executive summaries
+- audit reports
+- QA reports
+- project handoff reports
+- market/research reports
+- formatted Markdown/PDF/client docs
+- internal decision briefs
+
+### Bias
+- reader outcome over writer cleverness
+- evidence separated from opinion
+- assumptions, gaps, risks, and recommendations are explicit
+- formatting is part of the deliverable, not an afterthought
+- render/check the final file when producing Markdown, HTML, PDF, DOCX, or slides
+
+### Common bases
+- existing report templates
+- prior client/report examples
+- source docs, transcripts, logs, spreadsheets, screenshots, and research notes
+- Markdown/HTML/PDF generation pipelines when layout matters
+
+See [report-document-lane.md](report-document-lane.md).
 
 ## Lane rule
 

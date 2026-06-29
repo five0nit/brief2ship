@@ -1,7 +1,7 @@
 ---
 name: brief2ship
 description: "Brief2Ship: turn one strong brief into a better first-pass AI build with repo-first selection, maintainability gate, anti-slop finish, and proof receipts."
-version: 0.2.0
+version: 0.3.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -33,12 +33,13 @@ Ask only if they materially change the build.
 4. What references or products should this feel closer to?
 5. What constraints matter most: speed, polish, budget, mobile, auth, integrations, deployment?
 
-## The 3 lanes
+## The 4 lanes
 - App
 - Dashboard / Internal tool
 - Landing page
+- Report / Document
 
-Pick the nearest lane based on the primary user outcome.
+Pick the nearest lane based on the primary user outcome. For reports/documents, optimize for the reader decision, evidence quality, formatting, and a rendered/checked final artifact.
 
 ## Internal workflow
 
@@ -53,7 +54,7 @@ Use `unmaintainable-code` in reverse.
 Reject vague naming, hidden logic, duplicated business logic, unjustified abstraction, weak observability, dependency bloat, and chat-context-only code.
 
 ### Tier 3 — Design / finish pass
-Do not ship generic AI-slop UI.
+Do not ship generic AI-slop UI. For report/document work, do not ship generic AI-slop prose: require clear structure, evidence, assumptions, risks, recommendations, next actions, and formatting QA.
 
 Default references:
 - `shadcn-ui/ui`
@@ -77,3 +78,10 @@ Every build ends with:
 - commands/tests run
 - preview/screenshot/proof
 - known compromises
+
+For Report / Document lane receipts also include:
+- reader and decision/action supported
+- sources used
+- evidence vs assumptions vs analysis
+- formatting/render checks
+- known gaps or unverifiable claims

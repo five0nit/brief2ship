@@ -8,12 +8,13 @@ Brief2Ship is a lean build standard for AI-assisted product work. It turns a str
 
 Brief2Ship is a **workflow standard**, not a giant framework.
 
-It helps an operator or agent do four things consistently:
+It helps an operator or agent do five things consistently:
 
 1. **Get a strong one-shot prompt**
 2. **Choose a base before building greenfield**
 3. **Reject brittle unreadable agent code**
-4. **Turn the brief into a verified build**
+4. **Format reports and documents for decision-ready reading**
+5. **Turn the brief into a verified artifact**
 
 ## User experience
 
@@ -90,20 +91,21 @@ Use this line when explaining it publicly:
 
 - `skills/brief2ship/SKILL.md` — Hermes/OpenClaw skill package
 - `docs/how-it-works.md` — full breakdown of the workflow
-- `docs/lanes.md` — the 3 default build lanes
+- `docs/lanes.md` — the 4 default lanes
 - `docs/examples.md` — example prompts and execution patterns
-- `templates/` — kickoff and receipt templates
+- `templates/` — kickoff, report, and receipt templates
 - `scripts/install-skill.sh` — install the skill into a local Hermes profile
 
-## The 3 default lanes
+## The 4 default lanes
 
-To avoid ambiguity without overcomplicating the standard, this repo ships with only three default lanes:
+To avoid ambiguity without overcomplicating the standard, this repo ships with four default lanes:
 
 1. **App**
 2. **Dashboard / Internal tool**
 3. **Landing page**
+4. **Report / Document**
 
-See [docs/lanes.md](docs/lanes.md).
+See [docs/lanes.md](docs/lanes.md) and [docs/report-document-lane.md](docs/report-document-lane.md).
 
 ## Lightweight receipts
 
