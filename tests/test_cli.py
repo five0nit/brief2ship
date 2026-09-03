@@ -57,10 +57,9 @@ class CliTests(unittest.TestCase):
             ascii_stdout.flush()
 
         self.assertEqual(0, code, stderr.getvalue())
-        self.assertEqual(
-            '{"title":"naïve"}\n',
-            raw_stdout.getvalue().decode("utf-8"),
-        )
+        decoded = raw_stdout.getvalue().decode("utf-8")
+        self.assertEqual(['{"title":"naïve"}'], decoded.splitlines())
+        self.assertTrue(decoded.endswith("\n"))
 
     def test_private_target_blocked_without_override(self):
         code, stdout, stderr = self.run_cli(["scrape", "http://127.0.0.1/"])

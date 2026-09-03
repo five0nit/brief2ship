@@ -359,6 +359,7 @@ class InspectionTests(unittest.TestCase):
         self.assertIn("exceeds", result.warnings[0])
         run.assert_not_called()
 
+    @unittest.skipUnless(os.name == "posix", "Bubblewrap command construction is POSIX-only")
     def test_sandbox_uses_a_read_only_filesystem(self):
         completed = subprocess.CompletedProcess([], 0, "", "")
         with tempfile.TemporaryDirectory() as temporary, patch(
