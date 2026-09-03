@@ -29,6 +29,8 @@ Minimum source pass:
 - note missing evidence
 - preserve source links/paths where practical
 
+When public-web collection is needed, use [free scraping](free-scraping.md) as a bounded source-acquisition step: robots-aware, sequential, same-origin, hard-capped, and receipt-backed. Do not use login cookies, CAPTCHA bypass, proxy rotation, fingerprint evasion, or personal-data harvesting. A blocked or JavaScript-only page becomes an explicit evidence gap, not a reason to weaken the gate.
+
 ### 2. Structure before prose
 
 Choose the report skeleton before writing. Default structure:

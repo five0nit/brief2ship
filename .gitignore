@@ -1,2 +1,14 @@
 .DS_Store
 Thumbs.db
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+dist-v*/
+*.egg-info/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.pyright/

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build
+      - name: Validate release contract
+        run: python scripts/validate-release.py
+      - name: Build wheel and source archive
+        run: python -m build
+      - name: Install built wheel
+        run: >-
+          python -c "import glob,subprocess,sys;
+          wheels=glob.glob('dist/*.whl');
+          assert len(wheels)==1, wheels;
+          subprocess.check_call([sys.executable,'-m','pip','install','--force-reinstall',wheels[0]])"
+      - name: Installed console smoke
+        run: |
+          brief2ship doctor
+          python -m brief2ship --version
+          brief2ship discover --help
+          python -c "from brief2ship import DiscoveryConfig, discover; assert DiscoveryConfig and discover"
+
+  optional-extractor:
+    name: Optional Trafilatura adapter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install package with extraction extra
+        run: python -m pip install -e '.[extract]'
+      - name: Run full tests with optional extractor
+        run: python scripts/validate-release.py
+      - name: Verify doctor sees adapter
+        run: >-
+          python -c "import json,subprocess;
+          payload=json.loads(subprocess.check_output(['brief2ship','doctor'],text=True));
+          assert payload['trafilatura_available'] is True, payload"
