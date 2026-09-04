@@ -3,8 +3,7 @@
 **Stop AI coding agents from rebuilding what already exists.**
 
 [![CI](https://github.com/five0nit/brief2ship/actions/workflows/ci.yml/badge.svg)](https://github.com/five0nit/brief2ship/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/brief2ship?label=PyPI)](https://pypi.org/project/brief2ship/)
-[![Python](https://img.shields.io/pypi/pyversions/brief2ship)](https://pypi.org/project/brief2ship/)
+[![Python 3.11–3.13](https://img.shields.io/badge/python-3.11%E2%80%933.13-3776AB)](https://www.python.org/)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skill-open%20standard-6CFFB3)](https://agentskills.io/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/five0nit/brief2ship?style=social)](https://github.com/five0nit/brief2ship/stargazers)
@@ -17,10 +16,11 @@ Brief2Ship is a dependency-free Python CLI and portable Agent Skill for **repo-f
 
 ## 30-second quickstart
 
-Run directly from PyPI without a permanent install:
+Run the tagged release without a permanent install:
 
 ```bash
-uvx brief2ship discover "local robots-aware web scraper" \
+uvx --from git+https://github.com/five0nit/brief2ship.git@v0.6.2 \
+  brief2ship discover "local robots-aware web scraper" \
   --sources github,pypi,npm,crates,huggingface \
   --limit 5 --inspect-top 2 \
   --output discovery/
@@ -29,7 +29,8 @@ uvx brief2ship discover "local robots-aware web scraper" \
 Add a bounded local workspace to the same comparison:
 
 ```bash
-uvx brief2ship discover "local robots-aware web scraper" \
+uvx --from git+https://github.com/five0nit/brief2ship.git@v0.6.2 \
+  brief2ship discover "local robots-aware web scraper" \
   --local /path/to/scoped/workspace \
   --sources local,github,pypi,npm,crates,huggingface \
   --per-source 10 --limit 10 --inspect-top 3 \
@@ -91,9 +92,16 @@ Brief2Ship inspects manifests, dependency declarations, licenses, tests, CI, doc
 
 ## Install the CLI
 
-### PyPI
+### Versioned GitHub release
 
-Persistent tool install:
+```bash
+uv tool install git+https://github.com/five0nit/brief2ship.git@v0.6.2
+brief2ship doctor
+```
+
+### PyPI — pending first trusted publication
+
+The release workflow is ready for keyless PyPI Trusted Publishing. After the maintainer completes PyPI's one-time pending-publisher setup and the tagged workflow is verified, these shorter commands become available:
 
 ```bash
 uv tool install brief2ship
@@ -110,13 +118,6 @@ With optional local Trafilatura extraction:
 
 ```bash
 uv tool install --with 'trafilatura>=2.1,<3' brief2ship
-```
-
-### Immutable GitHub tag
-
-```bash
-uv tool install git+https://github.com/five0nit/brief2ship.git@v0.6.2
-brief2ship doctor
 ```
 
 ### Local development
