@@ -44,7 +44,7 @@ class DiscoveryHttpClient:
         timeout: float = 20.0,
         total_timeout: float | None = None,
         github_token: str | None = None,
-        user_agent: str = "Brief2ShipBot/0.6.0 (+https://github.com/five0nit/brief2ship)",
+        user_agent: str = "Brief2ShipBot/0.6.1 (+https://github.com/five0nit/brief2ship)",
     ) -> None:
         self.timeout = timeout
         self._expires_at = time.monotonic() + total_timeout if total_timeout is not None else None

@@ -22,6 +22,7 @@ checks = {
         "heygen-com/hyperframes",
     ],
     "CHANGELOG.md": [
+        "0.6.1",
         "0.6.0",
         "0.5.1",
         "0.5.0",
@@ -87,6 +88,13 @@ checks = {
         "116 tests passed",
         "brief2ship-bwrap-v2",
         "No push",
+    ],
+    "docs/releases/v0.6.1-single-search-skill-receipt.md": [
+        "Brief2Ship v0.6.1",
+        "Python 3.13",
+        "check_hostname",
+        "Hyperframes",
+        "141 tests passed",
     ],
     "docs/releases/v0.6.0-single-search-skill-receipt.md": [
         "PUBLIC RELEASE — VERIFIED",

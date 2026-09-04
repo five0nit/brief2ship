@@ -105,7 +105,7 @@ The result recommends `fork`, `use-as-library`, `selective-reuse`, `reject`, or 
 
 Repository code is never executed by default. Explicit tests require `--test-top N --allow-untrusted-tests` and a Linux Bubblewrap sandbox. The sandbox clears the environment, runs with no network access, hides the host home, makes the entire filesystem read-only, and limits additional processes, CPU, per-process memory, output-file size, and wall time. Unsupported systems produce a blocked receipt—never an unsafe fallback.
 
-See [docs/code-discovery.md](docs/code-discovery.md). Current Linux/Windows tests, local artifacts, clean installs, live provider smoke, and bounded real-candidate inspection are recorded in the source-checkout receipt at `docs/releases/v0.6.0-single-search-skill-receipt.md`. Release receipts remain outside built packages so their artifact hashes cannot become self-referential.
+See [docs/code-discovery.md](docs/code-discovery.md). Current Linux/Windows tests, local artifacts, clean installs, live provider smoke, and bounded real-candidate inspection are recorded in the source-checkout receipt at `docs/releases/v0.6.1-single-search-skill-receipt.md`. Release receipts remain outside built packages so their artifact hashes cannot become self-referential.
 
 ## Free scraping
 
@@ -145,14 +145,14 @@ The core extractor has no runtime dependency. Optional [Trafilatura](https://git
 From a release tag:
 
 ```bash
-uv tool install git+https://github.com/five0nit/brief2ship.git@v0.6.0
+uv tool install git+https://github.com/five0nit/brief2ship.git@v0.6.1
 brief2ship doctor
 ```
 
 With optional Trafilatura extraction:
 
 ```bash
-uv tool install --with 'trafilatura>=2.1,<3' git+https://github.com/five0nit/brief2ship.git@v0.6.0
+uv tool install --with 'trafilatura>=2.1,<3' git+https://github.com/five0nit/brief2ship.git@v0.6.1
 brief2ship doctor
 ```
 
@@ -175,7 +175,7 @@ Default profile:
 
 ```bash
 hermes skills install \
-  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.0/skills/brief2ship/SKILL.md \
+  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.1/skills/brief2ship/SKILL.md \
   --category software-development \
   --yes
 ```
@@ -185,7 +185,7 @@ Named profile:
 ```bash
 hermes profile create qa --no-alias --no-skills
 hermes --profile qa skills install \
-  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.0/skills/brief2ship/SKILL.md \
+  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.1/skills/brief2ship/SKILL.md \
   --category software-development \
   --yes
 hermes --profile qa skills list

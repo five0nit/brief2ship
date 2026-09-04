@@ -13,7 +13,7 @@ class ReleaseContractTests(unittest.TestCase):
         init = (ROOT / "src/brief2ship/__init__.py").read_text(encoding="utf-8")
         skill = (ROOT / "skills/brief2ship/SKILL.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertEqual("0.6.0", version)
+        self.assertEqual("0.6.1", version)
         self.assertEqual(version, pyproject["project"]["version"])
         self.assertIn(f'__version__ = "{version}"', init)
         self.assertIn(f"version: {version}", skill)
@@ -195,7 +195,7 @@ class ReleaseContractTests(unittest.TestCase):
     def test_readme_does_not_link_to_receipts_excluded_from_packages(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotRegex(readme, r"\]\(docs/releases/")
-        self.assertIn("`docs/releases/v0.6.0-single-search-skill-receipt.md`", readme)
+        self.assertIn("`docs/releases/v0.6.1-single-search-skill-receipt.md`", readme)
         self.assertIn("outside built packages", readme)
 
 

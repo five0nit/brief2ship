@@ -1,6 +1,6 @@
 """Brief2Ship public package."""
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 from .discovery import discover
 from .discovery_models import Candidate, DiscoveryConfig, DiscoveryResult

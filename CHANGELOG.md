@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-09-04
 
 - restore HTTPS scraping on Python 3.12 and 3.13 by forwarding the portable `SSLContext` argument without the removed `HTTPSConnection(check_hostname=...)` keyword
 - add Python 3.13 to package classifiers and the Linux/Windows CI matrix
