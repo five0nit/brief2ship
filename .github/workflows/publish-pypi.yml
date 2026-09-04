@@ -1,0 +1,82 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  verify:
+    name: Validate tag and release assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Validate source and release contract
+        run: python scripts/validate-release.py
+      - name: Require immutable release tag to match VERSION
+        id: names
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          python -c "from pathlib import Path; import os; expected='v'+Path('VERSION').read_text(encoding='utf-8').strip(); actual=os.environ['RELEASE_TAG']; ref_type=os.environ['RELEASE_REF_TYPE']; assert ref_type == 'tag', ref_type; assert actual == expected, (actual, expected)"
+          VERSION="$(cat VERSION)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "wheel=brief2ship-$VERSION-py3-none-any.whl" >> "$GITHUB_OUTPUT"
+          echo "sdist=brief2ship-$VERSION.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Install distribution metadata checker
+        run: python -m pip install --upgrade pip twine
+      - name: Download and verify exact GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern '${{ steps.names.outputs.wheel }}' \
+            --pattern '${{ steps.names.outputs.sdist }}' \
+            --pattern 'SHA256SUMS' \
+            --dir dist
+          python -m twine check \
+            'dist/${{ steps.names.outputs.wheel }}' \
+            'dist/${{ steps.names.outputs.sdist }}'
+          python scripts/verify-release-assets.py \
+            --directory dist \
+            --version '${{ steps.names.outputs.version }}'
+      - name: Preserve verified distributions for isolated publisher
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distributions
+          path: |
+            dist/${{ steps.names.outputs.wheel }}
+            dist/${{ steps.names.outputs.sdist }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish trusted distributions
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/brief2ship
+    permissions:
+      id-token: write
+    steps:
+      - name: Retrieve verified distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-distributions
+          path: dist/
+      - name: Publish through PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: false
+          verbose: true

@@ -1,0 +1,17 @@
+Brief2Ship terminal demo source
+
+The embedded README GIF is a deterministic visualisation of the public v0.6.0 dogfood receipt at docs/releases/v0.6.0-single-search-skill-receipt.md.
+
+Command:
+  brief2ship discover "brief2ship repository search" --local /workspace --sources local,github,pypi,npm,crates,huggingface --output discovery/
+
+Verified result reproduced in the animation:
+  candidate: local/brief2ship
+  score: 70.50/100
+  feature match: 11.00/25
+  inspection: inspected
+  disposition: selective-reuse
+  status: provisional
+  overall: selective-reuse
+
+The animation wraps the command and translates the `selective-reuse` disposition to the plain-language line `Reuse selected components` for phone-size legibility. It preserves the provisional status and does not claim a benchmark or a new run.

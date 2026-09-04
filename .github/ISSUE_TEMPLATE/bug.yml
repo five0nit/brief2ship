@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible Brief2Ship defect
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a defect. Remove credentials, private repository names, private URLs, personal data, and sensitive receipt content before posting.
+  - type: input
+    id: version
+    attributes:
+      label: Brief2Ship version
+      description: Output of `brief2ship --version`.
+      placeholder: brief2ship 0.6.2
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Sanitized command
+      description: Preserve flags and structure, but replace private paths, URLs, tokens, and names.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact error and a sanitized receipt excerpt when available.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: List deterministic steps using public or synthetic fixtures where possible.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, private URLs, private repository names, and personal data.
+          required: true
+        - label: I did not bypass robots.txt, authentication, CAPTCHA, or private-network protections.
+          required: true

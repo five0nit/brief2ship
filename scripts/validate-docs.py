@@ -20,8 +20,14 @@ checks = {
         "robots.txt required",
         "zero-paid-API",
         "heygen-com/hyperframes",
+        "Stop AI coding agents from rebuilding what already exists",
+        "gh skill install five0nit/brief2ship",
+        "npx skills add five0nit/brief2ship",
+        "claude plugin marketplace add five0nit/brief2ship",
+        "docs/case-studies.md",
     ],
     "CHANGELOG.md": [
+        "0.6.2",
         "0.6.1",
         "0.6.0",
         "0.5.1",
@@ -31,6 +37,21 @@ checks = {
         "zero-paid-API",
         "0.3.0",
         "Report / Document as a fourth default lane",
+    ],
+    "ROADMAP.md": [
+        "v0.6.x distribution and adoption",
+        "v0.7 evidence quality",
+        "Non-goals",
+    ],
+    "CODE_OF_CONDUCT.md": [
+        "Contributor Covenant Code of Conduct",
+        "Enforcement Guidelines",
+    ],
+    "docs/case-studies.md": [
+        "Dogfooding found the canonical local project",
+        "specialist avatar base",
+        "build-clean",
+        "70.50/100",
     ],
     "docs/lanes.md": [
         "## 4. Report / Document",
@@ -95,6 +116,13 @@ checks = {
         "check_hostname",
         "Hyperframes",
         "141 tests passed",
+    ],
+    "docs/releases/v0.6.2-discoverability-receipt.md": [
+        "Brief2Ship v0.6.2",
+        "Canonical-repository exception",
+        "Agent Skills",
+        "PyPI",
+        "Release candidate",
     ],
     "docs/releases/v0.6.0-single-search-skill-receipt.md": [
         "PUBLIC RELEASE — VERIFIED",

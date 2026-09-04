@@ -1,0 +1,20 @@
+{
+  "name": "brief2ship",
+  "description": "Repo-first discovery and verified delivery for AI coding agents",
+  "version": "0.6.2",
+  "author": {
+    "name": "Michael Costea",
+    "url": "https://michaelcostea.com/"
+  },
+  "homepage": "https://github.com/five0nit/brief2ship",
+  "repository": "https://github.com/five0nit/brief2ship",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "ai-coding",
+    "code-search",
+    "package-search",
+    "repo-first",
+    "verified-delivery"
+  ]
+}

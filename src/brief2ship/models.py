@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-DEFAULT_USER_AGENT = "Brief2ShipBot/0.6.1 (+https://github.com/five0nit/brief2ship)"
+DEFAULT_USER_AGENT = "Brief2ShipBot/0.6.2 (+https://github.com/five0nit/brief2ship)"
 
 
 @dataclass(frozen=True)

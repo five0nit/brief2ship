@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and adoption stories
+    url: https://github.com/five0nit/brief2ship/discussions
+    about: Ask for help, share a receipt, or discuss an unbounded idea before opening an issue.
+  - name: Sensitive security report
+    url: https://github.com/five0nit/brief2ship/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue containing exploit details or secrets.
