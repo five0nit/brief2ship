@@ -12,6 +12,7 @@ from brief2ship.fetch import (
     _PinnedHTTPSHandler,
     _parse_robots,
     _pinned_opener,
+    _read_limited,
     _request_bytes,
     check_robots,
     fetch_page,
@@ -66,17 +67,6 @@ class SlowBodyOpener(urllib.request.OpenerDirector):
             url,
             {"Content-Type": "text/plain"},
             b"abcdefgh",
-        )
-
-
-class SlowEmptyBodyOpener(urllib.request.OpenerDirector):
-    def open(self, fullurl, data=None, timeout=None):  # noqa: ARG002
-        url = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else str(fullurl)
-        return SlowResponse(
-            200,
-            url,
-            {"Content-Type": "text/plain"},
-            b"",
         )
 
 
@@ -220,13 +210,17 @@ Disallow: /internal
         self.assertLess(time.monotonic() - started, 0.3)
 
     def test_empty_response_cannot_finish_after_wall_clock_deadline(self):
-        with self.assertRaisesRegex(FetchError, "total timeout"):
-            _request_bytes(
-                "https://93.184.216.34/",
-                config=self.config(timeout=0.05),
-                max_bytes=1024,
-                opener=SlowEmptyBodyOpener(),
-            )
+        response = FakeResponse(
+            200,
+            "https://93.184.216.34/",
+            {"Content-Type": "text/plain"},
+            b"",
+        )
+        with patch(
+            "brief2ship.fetch.time.monotonic",
+            side_effect=[0.0, 0.06],
+        ), self.assertRaisesRegex(FetchError, "total timeout"):
+            _read_limited(response, 1024, 0.05)
 
     def test_redirect_target_is_revalidated_against_private_network_policy(self):
         def selective_validator(url, *, allow_private=False):

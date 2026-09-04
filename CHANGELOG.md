@@ -4,6 +4,7 @@
 
 - restore HTTPS scraping on Python 3.12 and 3.13 by forwarding the portable `SSLContext` argument without the removed `HTTPSConnection(check_hostname=...)` keyword
 - add Python 3.13 to package classifiers and the Linux/Windows CI matrix
+- replace the empty-response timeout test's scheduler-sensitive real sleep with a deterministic monotonic-clock regression
 - add `heygen-com/hyperframes` as a conditional Tier 3 rendered-motion, animated-deck, and document/site-to-video finish reference
 
 ## 0.6.0 - 2026-09-03
