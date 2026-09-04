@@ -234,6 +234,8 @@ For design-heavy web builds, run separate discovery lanes before choosing the vi
 
 Reject false-positive framework/package-name matches as design candidates. Inspect real demos, screenshots, or rendered examples before claiming visual fit. For taste-sensitive work, compare 2–3 materially different industry-grounded directions before polishing one.
 
+When the deliverable needs deterministic rendered video, motion graphics, an animated deck, or document/site-to-video finish, evaluate [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) as a conditional candidate. Hyperframes is not a general UI component base. Keep repo-first license/runtime inspection in force, and verify the finished render—not only its HTML/CSS/JS source—for legibility, timing, motion, audio, codec, and target-device playback.
+
 ### Repo-search references
 
 - `references/curated-discovery-and-agent-entropy-gate.md` — curated rails and full entropy-gate rationale.

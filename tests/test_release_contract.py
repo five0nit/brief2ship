@@ -37,6 +37,23 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertEqual([], project["dependencies"])
         self.assertEqual(["trafilatura>=2.1,<3"], project["optional-dependencies"]["extract"])
 
+    def test_supported_python_versions_are_ci_covered(self):
+        configuration = tomllib.loads(
+            (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        classifiers = configuration["project"]["classifiers"]
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        for version in ("3.11", "3.12", "3.13"):
+            self.assertIn(f"Programming Language :: Python :: {version}", classifiers)
+            self.assertIn(f"'{version}'", ci)
+
+    def test_tier_three_keeps_hyperframes_as_a_conditional_finish_tool(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        skill = (ROOT / "skills/brief2ship/SKILL.md").read_text(encoding="utf-8")
+        for surface in (readme, skill):
+            self.assertIn("https://github.com/heygen-com/hyperframes", surface)
+        self.assertIn("not a general UI component base", skill)
+
     def test_native_install_claims_replace_private_installer(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertFalse((ROOT / "scripts/install-skill.sh").exists())

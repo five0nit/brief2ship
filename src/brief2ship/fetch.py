@@ -236,7 +236,6 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
             connection,
             req,
             context=getattr(self, "_context", None),
-            check_hostname=getattr(self, "_check_hostname", None),
         )
 
 

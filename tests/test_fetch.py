@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from brief2ship.errors import FetchError, PolicyError, RobotsDenied, RobotsUnavailable
 from brief2ship.fetch import (
+    _PinnedHTTPSConnection,
+    _PinnedHTTPSHandler,
     _parse_robots,
     _pinned_opener,
     _request_bytes,
@@ -273,6 +275,32 @@ Disallow: /internal
             )
 
         self.assertEqual(2, resolve.call_count)
+
+    def test_pinned_https_handler_only_forwards_portable_context(self):
+        targets = (
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                ("93.184.216.34", 443),
+            ),
+        )
+        handler = _PinnedHTTPSHandler(targets)
+        request = urllib.request.Request("https://example.com/")
+        sentinel = object()
+
+        with patch.object(handler, "do_open", return_value=sentinel) as do_open:
+            self.assertIs(sentinel, handler.https_open(request))
+
+        self.assertEqual({"context"}, set(do_open.call_args.kwargs))
+        context = do_open.call_args.kwargs["context"]
+        self.assertTrue(context is None or context.check_hostname)
+        connection = _PinnedHTTPSConnection(
+            "example.com",
+            targets=targets,
+            context=context,
+        )
+        self.assertTrue(getattr(connection, "_context").check_hostname)
 
     def test_default_transport_ignores_environment_proxies(self):
         with patch.dict(

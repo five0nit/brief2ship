@@ -19,6 +19,7 @@ checks = {
         "--total-timeout",
         "robots.txt required",
         "zero-paid-API",
+        "heygen-com/hyperframes",
     ],
     "CHANGELOG.md": [
         "0.6.0",
@@ -142,6 +143,7 @@ checks = {
         "Required code-discovery workflow",
         "github,pypi,npm,crates,huggingface",
         "formatting/render checks",
+        "heygen-com/hyperframes",
     ],
 }
 

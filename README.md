@@ -60,6 +60,7 @@ Useful references:
 - [`motiondivision/motion`](https://github.com/motiondivision/motion)
 - [`darkroomengineering/lenis`](https://github.com/darkroomengineering/lenis) only when justified
 - [`magicuidesign/magicui`](https://github.com/magicuidesign/magicui) selectively
+- [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) when the deliverable needs deterministic HTML/CSS/JS-rendered video, motion graphics, an animated deck, or document/site-to-video finish; inspect the rendered output, not only the source HTML
 
 ## The 4 default lanes
 
