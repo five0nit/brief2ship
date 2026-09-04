@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Brief2Ship social preview</title>
+  <desc id="desc">Stop AI agents rebuilding what already exists. Search, score, reuse, and ship proof.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#27303A" stroke-width="1" opacity="0.24"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="640" fill="#070A0E"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <rect x="1" y="1" width="1278" height="638" rx="30" fill="none" stroke="#304038" stroke-width="2"/>
+
+  <g font-family="DejaVu Sans, Arial, sans-serif">
+    <rect x="60" y="52" width="58" height="58" rx="15" fill="#6CFFB3"/>
+    <text x="89" y="89" text-anchor="middle" font-size="23" font-weight="800" fill="#07110C">B2S</text>
+    <text x="136" y="88" font-size="30" font-weight="800" fill="#F4F7FB">BRIEF</text>
+    <text x="235" y="88" font-size="30" font-weight="800" fill="#6CFFB3">2</text>
+    <text x="254" y="88" font-size="30" font-weight="800" fill="#F4F7FB">SHIP</text>
+    <text x="60" y="144" font-family="DejaVu Sans Mono, monospace" font-size="17" letter-spacing="1" fill="#A7B2BE">REPO-FIRST DISCOVERY FOR AI CODING AGENTS</text>
+
+    <text x="60" y="226" font-size="55" font-weight="800" fill="#F4F7FB">Stop AI agents</text>
+    <text x="60" y="290" font-size="55" font-weight="800" fill="#F4F7FB">rebuilding what</text>
+    <text x="60" y="354" font-size="55" font-weight="800" fill="#F4F7FB">already exists.</text>
+    <text x="60" y="414" font-size="25" fill="#B2BDC8">Search six sources. Score evidence.</text>
+    <text x="60" y="451" font-size="25" fill="#B2BDC8">Reuse deliberately. Ship proof.</text>
+
+    <g transform="translate(697 78)">
+      <rect x="0" y="0" width="523" height="404" rx="20" fill="#0D1218" stroke="#34414E" stroke-width="2"/>
+      <rect x="0" y="0" width="523" height="54" rx="20" fill="#121922"/>
+      <path d="M0 30h523v24H0z" fill="#121922"/>
+      <circle cx="27" cy="27" r="6" fill="#FF6B6B"/>
+      <circle cx="49" cy="27" r="6" fill="#FFD166"/>
+      <circle cx="71" cy="27" r="6" fill="#6CFFB3"/>
+      <text x="261" y="34" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="16" fill="#A7B2BE">repository discovery receipt</text>
+
+      <g font-family="DejaVu Sans Mono, monospace">
+        <text x="28" y="98" font-size="23" fill="#6CFFB3">$</text>
+        <text x="53" y="98" font-size="23" fill="#F4F7FB">brief2ship discover</text>
+        <text x="28" y="137" font-size="19" fill="#B2BDC8">"brief2ship repository search"</text>
+        <line x1="28" y1="166" x2="495" y2="166" stroke="#34414E"/>
+        <text x="28" y="208" font-size="19" font-weight="700" fill="#A7B2BE">SEARCH</text>
+        <text x="142" y="208" font-size="19" fill="#F4F7FB">local + 5 public sources</text>
+        <text x="28" y="251" font-size="19" font-weight="700" fill="#A7B2BE">BEST MATCH</text>
+        <text x="172" y="251" font-size="19" fill="#F4F7FB">local/brief2ship</text>
+        <text x="28" y="294" font-size="19" font-weight="700" fill="#A7B2BE">SCORE</text>
+        <text x="142" y="294" font-size="19" fill="#F4F7FB">70.50 / 100</text>
+        <rect x="28" y="326" width="467" height="53" rx="11" fill="#10241A" stroke="#46A873" stroke-width="2"/>
+        <text x="261" y="360" text-anchor="middle" font-size="21" font-weight="800" fill="#6CFFB3">SELECTIVE-REUSE</text>
+      </g>
+    </g>
+
+    <line x1="60" y1="530" x2="1220" y2="530" stroke="#34414E"/>
+    <text x="60" y="579" font-family="DejaVu Sans Mono, monospace" font-size="20" font-weight="700" fill="#F4F7FB">SEARCH</text>
+    <text x="151" y="579" font-size="21" fill="#657281">→</text>
+    <text x="188" y="579" font-family="DejaVu Sans Mono, monospace" font-size="20" font-weight="700" fill="#F4F7FB">SCORE</text>
+    <text x="267" y="579" font-size="21" fill="#657281">→</text>
+    <text x="304" y="579" font-family="DejaVu Sans Mono, monospace" font-size="20" font-weight="700" fill="#F4F7FB">REUSE OR BUILD CLEAN</text>
+    <text x="534" y="579" font-size="21" fill="#657281">→</text>
+    <text x="571" y="579" font-family="DejaVu Sans Mono, monospace" font-size="20" font-weight="800" fill="#6CFFB3">PROOF</text>
+    <text x="1220" y="579" text-anchor="end" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#A7B2BE">OPEN SOURCE · MIT · ZERO CORE DEPS</text>
+  </g>
+</svg>

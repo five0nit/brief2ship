@@ -1,4 +1,10 @@
+import hashlib
+import json
 import re
+import struct
+import subprocess
+import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -13,7 +19,7 @@ class ReleaseContractTests(unittest.TestCase):
         init = (ROOT / "src/brief2ship/__init__.py").read_text(encoding="utf-8")
         skill = (ROOT / "skills/brief2ship/SKILL.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertEqual("0.6.1", version)
+        self.assertEqual("0.6.2", version)
         self.assertEqual(version, pyproject["project"]["version"])
         self.assertIn(f'__version__ = "{version}"', init)
         self.assertIn(f"version: {version}", skill)
@@ -195,8 +201,102 @@ class ReleaseContractTests(unittest.TestCase):
     def test_readme_does_not_link_to_receipts_excluded_from_packages(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotRegex(readme, r"\]\(docs/releases/")
-        self.assertIn("`docs/releases/v0.6.1-single-search-skill-receipt.md`", readme)
+        self.assertIn("`docs/releases/v0.6.2-discoverability-receipt.md`", readme)
         self.assertIn("outside built packages", readme)
+
+    def test_discovery_marketing_and_community_surfaces(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertLess(
+            readme.index("Stop AI coding agents from rebuilding what already exists"),
+            readme.index("## 30-second quickstart"),
+        )
+        self.assertLess(readme.index("## 30-second quickstart"), readme.index("## Why Brief2Ship?"))
+        for rel in [
+            "CODE_OF_CONDUCT.md",
+            "ROADMAP.md",
+            "docs/case-studies.md",
+            ".github/ISSUE_TEMPLATE/bug.yml",
+            ".github/ISSUE_TEMPLATE/feature.yml",
+            ".github/PULL_REQUEST_TEMPLATE.md",
+        ]:
+            self.assertTrue((ROOT / rel).is_file(), rel)
+
+        png = (ROOT / "docs/assets/social-preview.png").read_bytes()
+        self.assertEqual(b"\x89PNG\r\n\x1a\n", png[:8])
+        self.assertEqual((1280, 640), struct.unpack(">II", png[16:24]))
+        self.assertLess(len(png), 1_000_000)
+
+        gif = (ROOT / "docs/assets/brief2ship-demo.gif").read_bytes()
+        self.assertIn(gif[:6], (b"GIF87a", b"GIF89a"))
+        self.assertEqual((640, 500), struct.unpack("<HH", gif[6:10]))
+        self.assertLess(len(gif), 1_000_000)
+
+    def test_agent_distribution_metadata_matches_release(self):
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+        marketplace = json.loads(
+            (ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("brief2ship", plugin["name"])
+        self.assertEqual(version, plugin["version"])
+        self.assertEqual(version, marketplace["plugins"][0]["version"])
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"brief2ship@v{version}", readme)
+        self.assertIn("npx skills add five0nit/brief2ship --skill brief2ship", readme)
+        self.assertIn("claude plugin install brief2ship@brief2ship", readme)
+
+    def test_pypi_trusted_publishing_contract(self):
+        workflow = (ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+        self.assertIn("environment:\n      name: pypi", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn(
+            "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
+            workflow,
+        )
+        self.assertIn("github.ref_name", workflow)
+        self.assertIn("github.ref_type", workflow)
+        self.assertIn('gh release download "$GITHUB_REF_NAME"', workflow)
+        self.assertIn("steps.names.outputs.wheel", workflow)
+        self.assertIn("steps.names.outputs.sdist", workflow)
+        self.assertNotIn("brief2ship-*.whl", workflow)
+        self.assertNotIn("brief2ship-*.tar.gz", workflow)
+        self.assertNotIn("python -m build", workflow)
+        self.assertLess(
+            workflow.index("python -m twine check"),
+            workflow.index("python scripts/verify-release-assets.py"),
+        )
+        self.assertNotIn("types: [published]", workflow)
+        self.assertNotIn("secrets.", workflow)
+
+    def test_release_asset_verifier_requires_exact_files_and_checksums(self):
+        version = "0.6.2"
+        wheel = f"brief2ship-{version}-py3-none-any.whl"
+        sdist = f"brief2ship-{version}.tar.gz"
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            (directory / wheel).write_bytes(b"wheel payload")
+            (directory / sdist).write_bytes(b"sdist payload")
+            sums = "\n".join(
+                f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}"
+                for name in (wheel, sdist)
+            )
+            (directory / "SHA256SUMS").write_text(sums + "\n", encoding="ascii")
+            command = [
+                sys.executable,
+                str(ROOT / "scripts/verify-release-assets.py"),
+                "--directory",
+                str(directory),
+                "--version",
+                version,
+            ]
+            completed = subprocess.run(command, capture_output=True, text=True, check=False)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertIn("Release assets verified", completed.stdout)
+
+            (directory / "unexpected.whl").write_bytes(b"not declared")
+            rejected = subprocess.run(command, capture_output=True, text=True, check=False)
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("must contain exactly", rejected.stderr)
 
 
 if __name__ == "__main__":

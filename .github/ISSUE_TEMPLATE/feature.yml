@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a bounded improvement with a verifiable outcome
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Brief2Ship stays lean. Start with the problem and evidence, not a large proposed architecture.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What repo-first decision, evidence gap, install path, or verification failure is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Concrete example
+      description: Use public or synthetic data. Do not include credentials, private repository names, private URLs, or personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Smallest useful outcome
+      description: Describe observable behavior, not implementation preference.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance checks
+      placeholder: |
+        - deterministic fixture reproduces the gap
+        - behavior is bounded and cross-platform where claimed
+        - receipt explains the result
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - Discovery provider
+        - Local workspace discovery
+        - Candidate inspection and scoring
+        - Agent Skill installation
+        - CLI usability
+        - Public-web collection
+        - Documentation and examples
+        - Release and packaging
+        - Other
+    validations:
+      required: true

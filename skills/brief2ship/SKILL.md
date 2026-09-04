@@ -1,7 +1,7 @@
 ---
 name: brief2ship
 description: "Use when repo/package/local-workspace search, a new build, report/document, or public-web research is needed. Brief2Ship is the sole repo-search skill: discover and score bases, choose a disposition, apply maintainability/design/scraping gates, implement, verify, and retain proof."
-version: 0.6.1
+version: 0.6.2
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]

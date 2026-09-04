@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.2 - 2026-09-05
+
+- reposition Brief2Ship around its sharpest searchable job: stop AI coding agents rebuilding what already exists
+- move a runnable PyPI quickstart, real dogfood demo, scored result, comparison table, and proof strip above the detailed workflow documentation
+- add a custom 1280×640 social preview, an animated terminal receipt, and three evidence-bounded decision cases
+- add GitHub CLI Agent Skills, skills.sh, Claude Code plugin, PyPI, and immutable-tag installation routes
+- add GitHub Trusted Publishing workflow for PyPI with exact release-tag/version validation and no repository secret requirement
+- add Code of Conduct, issue forms, pull-request template, roadmap, contribution links, and Discussions routes
+- expand package metadata and release-contract checks for distribution, community, and marketing artifacts
+
 ## 0.6.1 - 2026-09-04
 
 - restore HTTPS scraping on Python 3.12 and 3.13 by forwarding the portable `SSLContext` argument without the removed `HTTPSConnection(check_hostname=...)` keyword

@@ -1,0 +1,20 @@
+{
+  "name": "brief2ship",
+  "description": "Official Brief2Ship plugin marketplace",
+  "owner": {
+    "name": "Michael Costea",
+    "url": "https://michaelcostea.com/"
+  },
+  "plugins": [
+    {
+      "name": "brief2ship",
+      "description": "Search and score existing code before greenfield AI builds, then ship with proof",
+      "version": "0.6.2",
+      "source": "./",
+      "author": {
+        "name": "Michael Costea",
+        "url": "https://michaelcostea.com/"
+      }
+    }
+  ]
+}
