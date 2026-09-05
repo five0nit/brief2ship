@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 - Unreleased
+## 0.7.0 - 2026-09-05
 
 - separate discovery health, decision status, and reuse disposition; provider failures, empty retrieval and missing inspections now yield `inconclusive` with CLI exit 5, never a false clean-build recommendation
 - decide against the full evaluated set; make `--limit` presentation-only and preserve every evaluated candidate, inspection allocation and selected identity in v2 receipts
@@ -10,7 +10,7 @@
 - recognize canonical full-text MIT bodies while preserving raw evidence; free-form copyright notices are review-required rather than granted authority through a regex
 - add explicit `--summary` JSON output with decision state, source health, counts, score, blockers and receipt paths
 - add a synthetic task-quality regression benchmark, pinned lint/type checks, clean installed-wheel smoke and extracted-sdist validation in CI
-- document v2 migration and native PowerShell onboarding; retain published v0.6.2 installation URLs until release approval
+- document v2 migration and native PowerShell onboarding; update versioned installation routes to v0.7.0 while keeping historical demo evidence pinned
 
 ## 0.6.2 - 2026-09-05
 

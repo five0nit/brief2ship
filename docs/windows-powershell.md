@@ -1,9 +1,15 @@
 # Native Windows PowerShell quickstart
 
-Use PowerShell with Python 3.11, 3.12 or 3.13 installed. Start in the existing
-Brief2Ship source checkout containing `pyproject.toml`. The working tree's v0.7.0
-is unreleased; the published v0.6.2 tag does not contain the new v2 decisions.
-Do not install a future tag or assume that PyPI publication has happened.
+Use PowerShell with Python 3.11, 3.12 or 3.13 installed. Start in a fresh
+Brief2Ship v0.7.0 source checkout containing `pyproject.toml`:
+
+```powershell
+git clone --branch v0.7.0 --depth 1 https://github.com/five0nit/brief2ship.git
+if ($LASTEXITCODE -ne 0) { throw "Source checkout failed" }
+Set-Location brief2ship
+```
+
+This GitHub release includes v2 decisions. PyPI publication remains separate.
 
 ## Isolated source install
 

@@ -10,7 +10,7 @@ Brief2Ship stays deliberately lean. Roadmap items must improve repo-first decisi
 - improve first-run examples, error messages, and receipt readability;
 - publish small, reproducible decision cases rather than unsupported savings claims.
 
-## In the working tree — v0.7 evidence quality: reliable reuse decisions (unreleased)
+## v0.7 evidence quality: reliable reuse decisions
 
 - explicit inconclusive decisions for incomplete collection or insufficient evidence;
 - display-only limits, complete evaluated/inspection receipts and selected identities;
@@ -19,7 +19,7 @@ Brief2Ship stays deliberately lean. Roadmap items must improve repo-first decisi
 - concise JSON summary alongside full v2 receipts;
 - synthetic task-quality regressions plus automated lint/type/wheel/sdist gates.
 
-The public v0.6.2 tag does not contain this work. Publication remains a separate approval.
+Included in v0.7.0. PyPI publication and broader host validation remain separate work.
 
 ## Next evidence-quality work
 
