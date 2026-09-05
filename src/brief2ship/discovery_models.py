@@ -13,6 +13,7 @@ class ScoreBreakdown:
     evidence: dict[str, list[str]]
     coverage: float = 0.0
     unknown_cost: float = 0.0
+    decision_score: float = 0.0
 
 
 @dataclass
@@ -93,6 +94,13 @@ class Candidate:
     hard_blockers: list[str] = field(default_factory=list)
     required_checks: list[str] = field(default_factory=list)
     canonical_id: str | None = None
+    normalized_license: str | None = None
+    source_rank: int | None = None
+    constraint_checks: list[str] = field(default_factory=list)
+    repository_evidence: dict[str, Any] = field(default_factory=dict)
+    license_kind: str = "metadata"
+    license_body_match: str | None = None
+    license_review_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -108,6 +116,7 @@ class SourceReceipt:
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
     rate_limit_remaining: int | None = None
+    queries: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -163,9 +172,16 @@ class DiscoveryResult:
     overall_recommendation: str
     recommendation_reason: str
     limitations: list[str] = field(default_factory=list)
-    schema_version: str = "brief2ship-discovery-v1"
-    scoring_contract: str = "brief2ship-score-v1"
+    schema_version: str = "brief2ship-discovery-v2"
+    scoring_contract: str = "brief2ship-score-v2"
     sandbox_policy: str = "brief2ship-bwrap-v2"
+    evaluated_candidates: list[Candidate] = field(default_factory=list)
+    selected_candidate_id: str | None = None
+    decision_status: str = "inconclusive"
+    discovery_status: str = "incomplete"
+    incomplete_reasons: list[str] = field(default_factory=list)
+    query_plan: dict[str, Any] = field(default_factory=dict)
+    inspection_decisions: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

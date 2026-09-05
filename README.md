@@ -14,6 +14,19 @@ Brief2Ship is a dependency-free Python CLI and portable Agent Skill for **repo-f
 
 *Real dogfood receipt: `local/brief2ship`, 70.50/100, inspected, `selective-reuse`. [Read the source transcript](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/assets/demo-transcript.txt) or [see more decision cases](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/case-studies.md).*
 
+## Development status: v0.7.0 (unreleased)
+
+The working tree adds reliable reuse decisions: explicit `inconclusive` outcomes,
+intent-preserving queries, complete evidence receipts, and `--summary` JSON output.
+Discovery receipt and scoring contracts are now v2. Read the
+[migration and decision guide](docs/code-discovery.md) before updating automation;
+exit `5` means insufficient evidence, not permission to build from scratch.
+For native Windows setup, see [PowerShell onboarding](docs/windows-powershell.md).
+
+The tagged commands and historical demo below intentionally remain on **v0.6.2**
+until v0.7.0 is approved and published. To exercise these changes, install this
+checkout with `python -m pip install .`; do not expect the v0.6.2 tag to contain them.
+
 ## 30-second quickstart
 
 Run the tagged release without a permanent install:
@@ -47,7 +60,8 @@ discovery/
 └── worktrees/       # bounded inspection clones when required
 ```
 
-The result records one explicit disposition:
+Conclusive discovery records one explicit disposition (v0.7.0 also records
+`inconclusive` when evidence cannot support a decision):
 
 - `use-as-library`
 - `fork`

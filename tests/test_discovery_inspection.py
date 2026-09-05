@@ -58,7 +58,7 @@ class InspectionTests(unittest.TestCase):
         (root / "pyproject.toml").write_text(
             '[project]\nname="fixture"\ndependencies=["one", "two"]\n', encoding="utf-8"
         )
-        (root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+        (root / "LICENSE").write_bytes((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes())
         (root / "README.md").write_text("fixture", encoding="utf-8")
         (root / "src/tool.py").write_text("VALUE = 1\n", encoding="utf-8")
         (root / "tests/test_ok.py").write_text(
@@ -93,7 +93,7 @@ class InspectionTests(unittest.TestCase):
             self._fixture(root)
             result = inspect_tree(root, "https://github.com/example/fixture")
         self.assertEqual(result.status, "inspected")
-        self.assertEqual(result.license, "MIT")
+        self.assertEqual(result.license, (Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"))
         self.assertEqual(result.dependency_count, 2)
         self.assertIn("pyproject.toml", result.manifest_files)
         self.assertEqual(len(result.test_files), 2)
@@ -239,7 +239,7 @@ class InspectionTests(unittest.TestCase):
                     '[project]\nname="fixture"\ndependencies=[]\n', encoding="utf-8"
                 )
                 (target / "README.md").write_text("fixture scraper", encoding="utf-8")
-                (target / "LICENSE").write_text("MIT License", encoding="utf-8")
+                (target / "LICENSE").write_bytes((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes())
                 (target / "tests/test_ok.py").write_text("import unittest\n", encoding="utf-8")
                 return subprocess.CompletedProcess(command, 0, "", "")
             return subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", "")
@@ -255,7 +255,7 @@ class InspectionTests(unittest.TestCase):
         ):
             result = RepositoryInspector(InspectorClient(), Path(temporary)).inspect(candidate)
         self.assertEqual("inspected", result.status)
-        self.assertEqual("MIT", candidate.license)
+        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"), candidate.license)
         self.assertTrue(candidate.security_policy)
         clone = next(command for command in calls if "clone" in command)
         self.assertIn("--depth=1", clone)

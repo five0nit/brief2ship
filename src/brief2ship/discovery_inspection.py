@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
 
 from .discovery_http import DiscoveryHttpClient, DiscoverySourceError
+from .discovery_licenses import read_license_evidence
 from .discovery_models import Candidate, InspectionResult, TestReceipt
 from .discovery_providers import canonical_repository_url
 
@@ -172,22 +173,7 @@ def _bounded_tree_size(root: Path) -> int:
 
 
 def _detect_license(root: Path) -> str | None:
-    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "COPYING.md"):
-        text = _safe_text(root / name).lower()
-        if not text:
-            continue
-        if "mit license" in text:
-            return "MIT"
-        if "apache license" in text and "version 2" in text:
-            return "Apache-2.0"
-        if "mozilla public license" in text and "2.0" in text:
-            return "MPL-2.0"
-        if "gnu general public license" in text:
-            return "GPL"
-        if "redistribution and use in source and binary forms" in text:
-            return "BSD"
-        return name
-    return None
+    return read_license_evidence(root, _safe_text)
 
 
 def _dependencies_from_manifest(path: Path) -> int | None:
@@ -627,9 +613,13 @@ class RepositoryInspector:
         candidate: Candidate,
         result: InspectionResult,
     ) -> None:
-        if result.license and not candidate.license:
+        package_scope = candidate.source in {"pypi", "npm", "crates", "huggingface"}
+        if result.license and not package_scope:
+            if candidate.license and candidate.license != result.license:
+                candidate.repository_evidence["prior_metadata_license"] = candidate.license
             candidate.license = result.license
-        if result.dependency_count is not None:
+            candidate.license_kind = "file"
+        if result.dependency_count is not None and not package_scope:
             candidate.dependency_count = result.dependency_count
         if result.test_files:
             candidate.test_signals.append("repository test files")

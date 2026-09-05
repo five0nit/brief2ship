@@ -1,0 +1,151 @@
+{
+  "schema": "brief2ship-quality-fixtures-v1",
+  "provenance": "Synthetic regression scenarios, agent-authored; not live provider data or a human-reviewed accuracy benchmark. Candidate names and evidence are fictional.",
+  "clock": "2026-09-01T00:00:00+00:00",
+  "cases": [
+    {
+      "id": "web-scraper-short",
+      "query": "web scraper",
+      "expected": "fixture/arachnid",
+      "description": "Robots-aware web scraper for public pages"
+    },
+    {
+      "id": "web-scraper-constraints",
+      "query": "I need a web scraper for Windows with no cloud and no paid APIs",
+      "expected": "fixture/arachnid",
+      "description": "Robots-aware web scraper for public pages"
+    },
+    {
+      "id": "sqlite-short",
+      "query": "sqlite database",
+      "expected": "fixture/granite",
+      "description": "Embedded sqlite database toolkit"
+    },
+    {
+      "id": "sqlite-constraints",
+      "query": "I need a sqlite database for Windows with no cloud and no paid APIs",
+      "expected": "fixture/granite",
+      "description": "Embedded sqlite database toolkit"
+    },
+    {
+      "id": "pdf-short",
+      "query": "pdf text extraction",
+      "expected": "fixture/folio",
+      "description": "PDF text extraction library"
+    },
+    {
+      "id": "pdf-constraints",
+      "query": "I need a pdf text extraction for Windows with no cloud and no paid APIs",
+      "expected": "fixture/folio",
+      "description": "PDF text extraction library"
+    },
+    {
+      "id": "calendar-short",
+      "query": "calendar event scheduling",
+      "expected": "fixture/almanac",
+      "description": "Calendar event scheduling library"
+    },
+    {
+      "id": "calendar-constraints",
+      "query": "I need a calendar event scheduling for Windows with no cloud and no paid APIs",
+      "expected": "fixture/almanac",
+      "description": "Calendar event scheduling library"
+    },
+    {
+      "id": "markdown-short",
+      "query": "markdown renderer",
+      "expected": "fixture/quill",
+      "description": "Markdown renderer for documents"
+    },
+    {
+      "id": "markdown-constraints",
+      "query": "I need a markdown renderer for Windows with no cloud and no paid APIs",
+      "expected": "fixture/quill",
+      "description": "Markdown renderer for documents"
+    },
+    {
+      "id": "audio-short",
+      "query": "audio transcription",
+      "expected": "fixture/echo",
+      "description": "Audio transcription toolkit"
+    },
+    {
+      "id": "audio-constraints",
+      "query": "I need a audio transcription for Windows with no cloud and no paid APIs",
+      "expected": "fixture/echo",
+      "description": "Audio transcription toolkit"
+    },
+    {
+      "id": "android-short",
+      "query": "android launcher",
+      "expected": "fixture/orbit",
+      "description": "Android launcher application"
+    },
+    {
+      "id": "android-constraints",
+      "query": "I need a android launcher for Windows with no cloud and no paid APIs",
+      "expected": "fixture/orbit",
+      "description": "Android launcher application"
+    },
+    {
+      "id": "json-short",
+      "query": "json schema validation",
+      "expected": "fixture/contract",
+      "description": "JSON schema validation library"
+    },
+    {
+      "id": "json-constraints",
+      "query": "I need a json schema validation for Windows with no cloud and no paid APIs",
+      "expected": "fixture/contract",
+      "description": "JSON schema validation library"
+    },
+    {
+      "id": "printer-short",
+      "query": "network printer discovery",
+      "expected": "fixture/beacon",
+      "description": "Network printer discovery utility"
+    },
+    {
+      "id": "printer-constraints",
+      "query": "I need a network printer discovery for Windows with no cloud and no paid APIs",
+      "expected": "fixture/beacon",
+      "description": "Network printer discovery utility"
+    },
+    {
+      "id": "shell-short",
+      "query": "command shell",
+      "expected": "fixture/conch",
+      "description": "Interactive command shell"
+    },
+    {
+      "id": "shell-constraints",
+      "query": "I need a command shell for Windows with no cloud and no paid APIs",
+      "expected": "fixture/conch",
+      "description": "Interactive command shell"
+    },
+    {
+      "id": "catalogue-short",
+      "query": "project catalogue",
+      "expected": "fixture/atlas",
+      "description": "Local project catalogue tool"
+    },
+    {
+      "id": "catalogue-constraints",
+      "query": "I need a project catalogue for Windows with no cloud and no paid APIs",
+      "expected": "fixture/atlas",
+      "description": "Local project catalogue tool"
+    },
+    {
+      "id": "csv-short",
+      "query": "csv data analysis",
+      "expected": "fixture/tabular",
+      "description": "CSV data analysis library"
+    },
+    {
+      "id": "csv-constraints",
+      "query": "I need a csv data analysis for Windows with no cloud and no paid APIs",
+      "expected": "fixture/tabular",
+      "description": "CSV data analysis library"
+    }
+  ]
+}

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 - Unreleased
+
+- separate discovery health, decision status, and reuse disposition; provider failures, empty retrieval and missing inspections now yield `inconclusive` with CLI exit 5, never a false clean-build recommendation
+- decide against the full evaluated set; make `--limit` presentation-only and preserve every evaluated candidate, inspection allocation and selected identity in v2 receipts
+- add deterministic core/constraint query planning, bounded GitHub reciprocal-rank fusion, registry core queries and source ranks without model calls or new runtime dependencies
+- gate ranking on relevance, use confidence-adjusted decision scores and prefer ready evidence; retain original constraints as unverified checks
+- preserve unknown dependency metadata and package/repository evidence scope instead of silently awarding dependency-free credit
+- recognize canonical full-text MIT bodies while preserving raw evidence; free-form copyright notices are review-required rather than granted authority through a regex
+- add explicit `--summary` JSON output with decision state, source health, counts, score, blockers and receipt paths
+- add a synthetic task-quality regression benchmark, pinned lint/type checks, clean installed-wheel smoke and extracted-sdist validation in CI
+- document v2 migration and native PowerShell onboarding; retain published v0.6.2 installation URLs until release approval
+
 ## 0.6.2 - 2026-09-05
 
 - reposition Brief2Ship around its sharpest searchable job: stop AI coding agents rebuilding what already exists

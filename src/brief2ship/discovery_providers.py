@@ -16,37 +16,12 @@ from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 from .discovery_http import DiscoveryHttpClient, DiscoverySourceError
 from .discovery_models import Candidate, SourceReceipt
-from .discovery_scoring import tokenize
+from .discovery_query import plan_query
 
 _GITHUB_API = "https://api.github.com"
 _PYPI_SIMPLE = "https://pypi.org/simple/"
 _OSV_API = "https://api.osv.dev/v1/query"
-_GITHUB_FOCUS_STOPWORDS = {
-    "and",
-    "app",
-    "application",
-    "build",
-    "building",
-    "code",
-    "ecosystem",
-    "existing",
-    "first",
-    "for",
-    "greenfield",
-    "library",
-    "multi",
-    "new",
-    "of",
-    "or",
-    "package",
-    "reuse",
-    "solution",
-    "support",
-    "the",
-    "tool",
-    "tools",
-    "with",
-}
+_NAME_STOPWORDS = {"a", "an", "and", "for", "of", "or", "the", "to", "with"}
 
 
 def _rate_limit_remaining(headers: dict[str, str]) -> int | None:
@@ -126,6 +101,12 @@ def _repository_from_mapping(mapping: Any) -> str | None:
     return None
 
 
+def _record_partial(receipt: SourceReceipt, message: str) -> None:
+    receipt.status = "partial"
+    receipt.warnings.append(message)
+    receipt.error = f"{receipt.error}; {message}" if receipt.error else message
+
+
 def _github_candidate(item: dict[str, Any]) -> Candidate:
     license_data = item.get("license") or {}
     return Candidate(
@@ -150,17 +131,15 @@ def _github_candidate(item: dict[str, Any]) -> Candidate:
     )
 
 
-def _github_focus_query(query: str) -> str:
-    """Reduce long prose to one bounded, deterministic GitHub fallback."""
-    tokens: list[str] = []
-    for value in re.findall(r"[A-Za-z0-9][A-Za-z0-9_.+#-]*", query.lower()):
-        for token in re.findall(r"[a-z0-9][a-z0-9_.+#]*", value.replace("-", " ")):
-            if len(token) < 2 or token in _GITHUB_FOCUS_STOPWORDS or token in tokens:
-                continue
-            tokens.append(token)
-    if len(tokens) < 2:
-        return query
-    return " ".join(tokens[:3])
+def _name_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(
+            r"[a-z0-9]+",
+            value.lower().replace("_", "-").replace(".", "-"),
+        )
+        if len(token) > 1 and token not in _NAME_STOPWORDS
+    }
 
 
 def search_github(
@@ -168,58 +147,97 @@ def search_github(
     limit: int,
     client: DiscoveryHttpClient,
 ) -> tuple[list[Candidate], SourceReceipt]:
-    endpoint = f"{_GITHUB_API}/search/repositories?{urlencode({'q': query, 'per_page': limit, 'page': 1})}"
-    receipt = SourceReceipt("github", "ok", limit, endpoints=[endpoint])
-    try:
-        data, payload = client.get_json(
-            endpoint,
-            headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"},
+    planned_queries = plan_query(query).variants[:3]
+    receipt = SourceReceipt("github", "ok", limit)
+    candidates_by_key: dict[str, Candidate] = {}
+    fusion_scores: dict[str, float] = {}
+    best_ranks: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
+    remaining_values: list[int] = []
+    failures: list[str] = []
+    private_count = 0
+    low_rate_limit = False
+    successful_queries = 0
+
+    for query_index, planned_query in enumerate(planned_queries):
+        endpoint = (
+            f"{_GITHUB_API}/search/repositories?"
+            f"{urlencode({'q': planned_query, 'per_page': limit, 'page': 1})}"
         )
-        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-            raise DiscoverySourceError("GitHub response had no repository items")
-        remaining_values = [_rate_limit_remaining(payload.headers)]
-        focused_query = _github_focus_query(query)
-        if not data["items"] and focused_query != query:
-            focused_endpoint = f"{_GITHUB_API}/search/repositories?{urlencode({'q': focused_query, 'per_page': limit, 'page': 1})}"
-            focused_data, focused_payload = client.get_json(
-                focused_endpoint,
+        receipt.queries.append(planned_query)
+        receipt.endpoints.append(endpoint)
+        try:
+            data, payload = client.get_json(
+                endpoint,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
             )
-            if not isinstance(focused_data, dict) or not isinstance(
-                focused_data.get("items"),
-                list,
-            ):
-                raise DiscoverySourceError(
-                    "GitHub focused fallback had no repository items"
-                )
-            data = focused_data
-            payload = focused_payload
-            receipt.endpoints.append(focused_endpoint)
-            receipt.warnings.append(
-                f"original query returned no results; used focused fallback: {focused_query}"
-            )
-            remaining_values.append(_rate_limit_remaining(payload.headers))
-        public_items = [
-            item for item in data["items"]
-            if isinstance(item, dict) and not item.get("private")
-        ]
-        private_count = len(data["items"]) - len(public_items)
-        candidates = [_github_candidate(item) for item in public_items]
-        observed_remaining = [value for value in remaining_values if value is not None]
-        receipt.rate_limit_remaining = min(observed_remaining) if observed_remaining else None
-        receipt.returned = len(candidates)
-        if payload.headers.get("x-ratelimit-limit") == "10":
-            receipt.warnings.append("unauthenticated GitHub rate limit is low; set GH_TOKEN or GITHUB_TOKEN")
-        if private_count:
-            receipt.warnings.append(f"filtered {private_count} private GitHub result(s)")
-        return candidates, receipt
-    except DiscoverySourceError as exc:
+        except DiscoverySourceError as exc:
+            message = f"query {planned_query!r}: {exc}"
+            failures.append(message)
+            receipt.warnings.append(message)
+            continue
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            message = f"query {planned_query!r}: response had no repository items"
+            failures.append(message)
+            receipt.warnings.append(message)
+            continue
+
+        successful_queries += 1
+        remaining = _rate_limit_remaining(payload.headers)
+        if remaining is not None:
+            remaining_values.append(remaining)
+        low_rate_limit = low_rate_limit or payload.headers.get("x-ratelimit-limit") == "10"
+
+        public_rank = 0
+        for item in data["items"]:
+            if not isinstance(item, dict):
+                continue
+            if item.get("private"):
+                private_count += 1
+                continue
+            public_rank += 1
+            candidate = _github_candidate(item)
+            identity = (candidate.repository_url or candidate.name).lower().rstrip("/")
+            if not identity:
+                continue
+            if identity not in candidates_by_key:
+                candidates_by_key[identity] = candidate
+                first_seen[identity] = query_index
+                best_ranks[identity] = public_rank
+                fusion_scores[identity] = 0.0
+            fusion_scores[identity] += 1.0 / (60 + public_rank)
+            best_ranks[identity] = min(best_ranks[identity], public_rank)
+
+    ordered_keys = sorted(
+        candidates_by_key,
+        key=lambda key: (
+            -fusion_scores[key],
+            best_ranks[key],
+            first_seen[key],
+            candidates_by_key[key].name.lower(),
+        ),
+    )[:limit]
+    candidates = [candidates_by_key[key] for key in ordered_keys]
+    for source_rank, candidate in enumerate(candidates, start=1):
+        candidate.source_rank = source_rank
+
+    receipt.returned = len(candidates)
+    receipt.rate_limit_remaining = min(remaining_values) if remaining_values else None
+    if successful_queries == 0:
         receipt.status = "failed"
-        receipt.error = str(exc)
-        return [], receipt
+        receipt.error = "; ".join(failures) or "all GitHub queries failed"
+    elif failures:
+        receipt.status = "partial"
+    if low_rate_limit:
+        receipt.warnings.append(
+            "unauthenticated GitHub rate limit is low; set GH_TOKEN or GITHUB_TOKEN"
+        )
+    if private_count:
+        receipt.warnings.append(f"filtered {private_count} private GitHub result(s)")
+    return candidates, receipt
 
 
 def _load_pypi_names(
@@ -270,8 +288,8 @@ def _load_pypi_names(
 
 
 def _name_fit(query: str, name: str) -> tuple[int, int, str]:
-    query_tokens = tokenize(query)
-    name_tokens = tokenize(name.replace("-", " "))
+    query_tokens = _name_tokens(query)
+    name_tokens = _name_tokens(name.replace("-", " "))
     overlap = len(query_tokens & name_tokens)
     all_match = int(bool(query_tokens) and query_tokens <= name_tokens)
     return all_match, overlap, name.lower()
@@ -292,13 +310,11 @@ def _pypi_repository(info: dict[str, Any]) -> str | None:
 
 
 def _pypi_runtime_dependency_count(requires: object) -> int | None:
-    if not isinstance(requires, list):
+    if not isinstance(requires, list) or any(
+        not isinstance(value, str) for value in requires
+    ):
         return None
-    return sum(
-        1
-        for value in requires
-        if isinstance(value, str) and "extra ==" not in value.lower()
-    )
+    return sum(1 for value in requires if "extra ==" not in value.lower())
 
 
 def search_pypi(
@@ -309,12 +325,19 @@ def search_pypi(
     cache_dir: Path,
     refresh: bool = False,
 ) -> tuple[list[Candidate], SourceReceipt]:
-    receipt = SourceReceipt("pypi", "ok", limit, endpoints=[_PYPI_SIMPLE])
+    search_query = plan_query(query).core_query
+    receipt = SourceReceipt(
+        "pypi",
+        "ok",
+        limit,
+        endpoints=[_PYPI_SIMPLE],
+        queries=[search_query],
+    )
     try:
         names = _load_pypi_names(client, cache_dir, refresh, receipt.warnings)
         matched_names: list[tuple[tuple[int, int, str], str]] = []
         for name in names:
-            fit = _name_fit(query, name)
+            fit = _name_fit(search_query, name)
             if fit[1] > 0:
                 matched_names.append((fit, name))
         ranked_names = [
@@ -327,15 +350,24 @@ def search_pypi(
         candidates: list[Candidate] = []
         for name in ranked_names[: max(limit * 3, limit)]:
             endpoint = f"https://pypi.org/pypi/{quote(name, safe='')}/json"
+            receipt.endpoints.append(endpoint)
             try:
                 data, _ = client.get_json(endpoint, max_bytes=3_000_000)
             except DiscoverySourceError as exc:
-                receipt.warnings.append(f"{name}: {exc}")
+                _record_partial(receipt, f"{name}: {exc}")
                 continue
             if not isinstance(data, dict) or not isinstance(data.get("info"), dict):
+                _record_partial(receipt, f"{name}: package detail had no info object")
                 continue
             info = data["info"]
-            requires = info.get("requires_dist") or []
+            requires = info.get("requires_dist")
+            if requires is not None and (
+                not isinstance(requires, list)
+                or any(not isinstance(value, str) for value in requires)
+            ):
+                receipt.warnings.append(
+                    f"{name}: requires_dist was malformed; dependency count is unknown"
+                )
             releases = data.get("releases") or {}
             version = str(info.get("version") or "") or None
             upload_time = None
@@ -347,26 +379,33 @@ def search_pypi(
                 Candidate(
                     source="pypi",
                     name=str(info.get("name") or name),
-                    url=str(info.get("package_url") or f"https://pypi.org/project/{name}/"),
+                    url=str(
+                        info.get("package_url")
+                        or f"https://pypi.org/project/{name}/"
+                    ),
                     repository_url=_pypi_repository(info),
                     description=str(info.get("summary") or ""),
                     version=version,
-                    license=str(info.get("license_expression") or info.get("license") or "") or None,
+                    license=str(
+                        info.get("license_expression") or info.get("license") or ""
+                    )
+                    or None,
                     updated_at=upload_time,
                     published_at=upload_time,
                     language="Python",
-                    topics=[str(value) for value in info.get("keywords") or []] if isinstance(info.get("keywords"), list) else str(info.get("keywords") or "").split(),
+                    topics=(
+                        [str(value) for value in info.get("keywords") or []]
+                        if isinstance(info.get("keywords"), list)
+                        else str(info.get("keywords") or "").split()
+                    ),
                     dependency_count=_pypi_runtime_dependency_count(requires),
                     reuse_signals=["package metadata", "installable package"],
+                    source_rank=len(candidates) + 1,
                 )
             )
-            receipt.endpoints.append(endpoint)
             if len(candidates) >= limit:
                 break
         receipt.returned = len(candidates)
-        if not candidates:
-            receipt.status = "failed"
-            receipt.error = "PyPI name search produced no inspectable candidates"
         return candidates, receipt
     except DiscoverySourceError as exc:
         receipt.status = "failed"
@@ -375,31 +414,48 @@ def search_pypi(
 
 
 def search_npm(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[list[Candidate], SourceReceipt]:
+    query = plan_query(query).core_query
     endpoint = f"https://registry.npmjs.org/-/v1/search?{urlencode({'text': query, 'size': limit})}"
-    receipt = SourceReceipt("npm", "ok", limit, endpoints=[endpoint])
+    receipt = SourceReceipt("npm", "ok", limit, endpoints=[endpoint], queries=[query])
     try:
         data, _ = client.get_json(endpoint)
         objects = data.get("objects") if isinstance(data, dict) else None
         if not isinstance(objects, list):
             raise DiscoverySourceError("npm response had no objects")
         candidates: list[Candidate] = []
-        for entry in objects:
+        for entry in objects[:limit]:
             package = entry.get("package") if isinstance(entry, dict) else None
             if not isinstance(package, dict):
                 continue
             name = str(package.get("name") or "")
             detail_url = f"https://registry.npmjs.org/{quote(name, safe='')}"
             detail: dict[str, Any] = {}
+            hydrated = False
+            receipt.endpoints.append(detail_url)
             try:
                 detail_data, _ = client.get_json(detail_url, max_bytes=8_000_000)
                 if isinstance(detail_data, dict):
                     detail = detail_data
-                receipt.endpoints.append(detail_url)
+                    hydrated = True
+                else:
+                    _record_partial(receipt, f"{name}: package detail was malformed")
             except DiscoverySourceError as exc:
-                receipt.warnings.append(f"{name}: {exc}")
+                _record_partial(receipt, f"{name}: {exc}")
             version = str(package.get("version") or "") or None
-            version_data = (detail.get("versions") or {}).get(version, {}) if version else {}
-            dependencies = version_data.get("dependencies") or {}
+            versions = detail.get("versions")
+            raw_version = versions.get(version) if isinstance(versions, dict) and version else None
+            version_known = hydrated and isinstance(raw_version, dict)
+            version_data = raw_version if isinstance(raw_version, dict) else {}
+            # A missing field in a known version means none; a missing version
+            # or malformed field means unknown. Never reward failed hydration.
+            dependencies = version_data.get("dependencies", {}) if version_known else None
+            dependency_count = None
+            if isinstance(dependencies, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in dependencies.items()):
+                dependency_count = len(dependencies)
+            elif version_known:
+                _record_partial(receipt, f"{name}: dependencies malformed; count unknown")
+            else:
+                _record_partial(receipt, f"{name}: version {version or 'unknown'} metadata unavailable; dependency count unknown")
             dev_dependencies = version_data.get("devDependencies") or {}
             scripts = version_data.get("scripts") or {}
             deprecation_reason = str(version_data.get("deprecated") or detail.get("deprecated") or "")
@@ -418,7 +474,7 @@ def search_npm(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[lis
                     updated_at=package.get("date"),
                     downloads=int(((entry.get("downloads") or {}).get("monthly") or (entry.get("downloads") or {}).get("weekly") or 0)) if isinstance(entry.get("downloads") or {}, dict) else None,
                     language="JavaScript",
-                    dependency_count=len(dependencies) if isinstance(dependencies, dict) else None,
+                    dependency_count=dependency_count,
                     test_signals=(
                         ["npm test script", f"development dependencies={len(dev_dependencies)}"]
                         if isinstance(scripts, dict) and scripts.get("test") and isinstance(dev_dependencies, dict)
@@ -428,6 +484,7 @@ def search_npm(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[lis
                     deprecation_reason=deprecation_reason or None,
                     raw_relevance=float(score_data.get("final") or 0),
                     reuse_signals=["package metadata", "installable package"],
+                    source_rank=len(candidates) + 1,
                 )
             )
         receipt.returned = len(candidates)
@@ -439,15 +496,16 @@ def search_npm(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[lis
 
 
 def search_crates(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[list[Candidate], SourceReceipt]:
+    query = plan_query(query).core_query
     endpoint = f"https://crates.io/api/v1/crates?{urlencode({'q': query, 'sort': 'relevance', 'per_page': limit, 'page': 1})}"
-    receipt = SourceReceipt("crates", "ok", limit, endpoints=[endpoint])
+    receipt = SourceReceipt("crates", "ok", limit, endpoints=[endpoint], queries=[query])
     try:
         data, _ = client.get_json(endpoint)
         crates = data.get("crates") if isinstance(data, dict) else None
         if not isinstance(crates, list):
             raise DiscoverySourceError("crates.io response had no crates")
         candidates: list[Candidate] = []
-        for item in crates:
+        for item in crates[:limit]:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("id") or item.get("name") or "")
@@ -455,6 +513,7 @@ def search_crates(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[
             dependency_count = None
             if version:
                 dependency_url = f"https://crates.io/api/v1/crates/{quote(name, safe='')}/{quote(version, safe='')}/dependencies"
+                receipt.endpoints.append(dependency_url)
                 try:
                     dependency_data, _ = client.get_json(dependency_url)
                     dependencies = dependency_data.get("dependencies") if isinstance(dependency_data, dict) else None
@@ -466,12 +525,13 @@ def search_crates(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[
                             and dependency.get("kind") in {None, "normal"}
                             and not dependency.get("optional")
                         )
-                        if isinstance(dependencies, list)
+                        if isinstance(dependencies, list) and all(isinstance(dep, dict) for dep in dependencies)
                         else None
                     )
-                    receipt.endpoints.append(dependency_url)
+                    if dependency_count is None:
+                        _record_partial(receipt, f"{name}: dependency response malformed; count unknown")
                 except DiscoverySourceError as exc:
-                    receipt.warnings.append(f"{name}: {exc}")
+                    _record_partial(receipt, f"{name}: {exc}")
             candidates.append(
                 Candidate(
                     source="crates",
@@ -510,8 +570,10 @@ def _hf_license(item: dict[str, Any]) -> str | None:
 
 
 def search_huggingface(query: str, limit: int, client: DiscoveryHttpClient) -> tuple[list[Candidate], SourceReceipt]:
-    receipt = SourceReceipt("huggingface", "ok", limit)
+    query = plan_query(query).core_query
+    receipt = SourceReceipt("huggingface", "ok", limit, queries=[query])
     candidates_by_kind: list[list[Candidate]] = []
+    successful_kinds = 0
     per_kind = max(1, math.ceil(limit / 3))
     for kind, plural in (("model", "models"), ("dataset", "datasets"), ("space", "spaces")):
         kind_candidates: list[Candidate] = []
@@ -520,7 +582,7 @@ def search_huggingface(query: str, limit: int, client: DiscoveryHttpClient) -> t
         try:
             data, payload = client.get_json(endpoint, max_bytes=8_000_000)
         except DiscoverySourceError as exc:
-            receipt.warnings.append(f"{kind}: {exc}")
+            _record_partial(receipt, f"{kind}: {exc}")
             candidates_by_kind.append(kind_candidates)
             continue
         remaining = _rate_limit_remaining(payload.headers)
@@ -531,24 +593,40 @@ def search_huggingface(query: str, limit: int, client: DiscoveryHttpClient) -> t
                 else min(receipt.rate_limit_remaining, remaining)
             )
         if not isinstance(data, list):
-            receipt.warnings.append(f"{kind}: response was not a list")
+            _record_partial(receipt, f"{kind}: response was not a list")
             candidates_by_kind.append(kind_candidates)
             continue
-        for position, item in enumerate(data):
+        successful_kinds += 1
+        for position, item in enumerate(data[:per_kind]):
             if not isinstance(item, dict):
+                _record_partial(receipt, f"{kind}: result was not an object")
+                continue
+            card = item.get("cardData")
+            tags_data = item.get("tags")
+            invalid = (
+                not isinstance(item.get("id"), str) or not item.get("id")
+                or (card is not None and not isinstance(card, dict))
+                or (tags_data is not None and (
+                    not isinstance(tags_data, list) or not all(isinstance(tag, str) for tag in tags_data)
+                ))
+                or any(item.get(field) is not None and type(item[field]) is not int for field in ("downloads", "likes"))
+                or (item.get("gated") is not None and not isinstance(item["gated"], (bool, str)))
+            )
+            if invalid:
+                _record_partial(receipt, f"{kind}: malformed result fields at rank {position + 1}")
                 continue
             if item.get("private"):
                 receipt.warnings.append(f"{kind}: filtered private result")
                 continue
             identifier = str(item.get("id") or "")
-            tags = [str(value) for value in item.get("tags") or []]
+            tags = [str(value) for value in tags_data or []]
             kind_candidates.append(
                 Candidate(
                     source="huggingface",
                     name=identifier,
                     url=f"https://huggingface.co/{'datasets/' if kind == 'dataset' else 'spaces/' if kind == 'space' else ''}{identifier}",
                     repository_url=None,
-                    description=str((item.get("cardData") or {}).get("summary") or item.get("pipeline_tag") or ""),
+                    description=str((card if isinstance(card, dict) else {}).get("summary") or item.get("pipeline_tag") or ""),
                     license=_hf_license(item),
                     updated_at=item.get("lastModified") or item.get("last_modified"),
                     downloads=int(item.get("downloads") or 0),
@@ -570,9 +648,9 @@ def search_huggingface(query: str, limit: int, client: DiscoveryHttpClient) -> t
         if index < len(group)
     ][:limit]
     receipt.returned = len(candidates)
-    if not candidates and receipt.warnings:
+    if successful_kinds == 0:
         receipt.status = "failed"
-        receipt.error = "all Hugging Face endpoints failed"
+        receipt.error = f"all Hugging Face endpoints failed: {receipt.error or 'invalid responses'}"
     return candidates, receipt
 
 

@@ -19,7 +19,7 @@ class ReleaseContractTests(unittest.TestCase):
         init = (ROOT / "src/brief2ship/__init__.py").read_text(encoding="utf-8")
         skill = (ROOT / "skills/brief2ship/SKILL.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertEqual("0.6.2", version)
+        self.assertEqual("0.7.0", version)
         self.assertEqual(version, pyproject["project"]["version"])
         self.assertIn(f'__version__ = "{version}"', init)
         self.assertIn(f"version: {version}", skill)
@@ -241,9 +241,20 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertEqual(version, plugin["version"])
         self.assertEqual(version, marketplace["plugins"][0]["version"])
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn(f"brief2ship@v{version}", readme)
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        if f"## {version} - Unreleased" in changelog:
+            self.assertIn(f"v{version} (unreleased)", readme)
+            self.assertNotIn(f"brief2ship@v{version}", readme)
+        else:
+            self.assertIn(f"brief2ship@v{version}", readme)
         self.assertIn("npx skills add five0nit/brief2ship --skill brief2ship", readme)
         self.assertIn("claude plugin install brief2ship@brief2ship", readme)
+
+    def test_ci_exercises_quality_and_both_distributions(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        for required in ("ruff==0.16.6", "pyright==1.1.411", "scripts/benchmark-discovery.py",
+                         "scripts/check-sdist.py", "scripts/smoke-installed.py"):
+            self.assertIn(required, workflow)
 
     def test_pypi_trusted_publishing_contract(self):
         workflow = (ROOT / ".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")

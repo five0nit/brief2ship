@@ -95,15 +95,15 @@ class DiscoveryIntegrationTests(unittest.TestCase):
         self.assertEqual({source.source for source in result.sources}, {"github", "pypi", "npm", "crates", "huggingface"})
         self.assertGreaterEqual(len(result.candidates), 5)
         self.assertEqual(payload["query"], "safe web scraper")
-        self.assertEqual(payload["schema_version"], "brief2ship-discovery-v1")
-        self.assertEqual(payload["scoring_contract"], "brief2ship-score-v1")
+        self.assertEqual(payload["schema_version"], "brief2ship-discovery-v2")
+        self.assertEqual(payload["scoring_contract"], "brief2ship-score-v2")
         self.assertEqual(payload["sandbox_policy"], "brief2ship-bwrap-v2")
         self.assertEqual(payload["config"]["total_timeout"], 180.0)
         self.assertIn("coverage", payload["candidates"][0]["score"])
         self.assertIn("recommendation_status", payload["candidates"][0])
         self.assertIn("Ranked candidates", markdown)
-        scores = [candidate.score.total if candidate.score else -1 for candidate in result.candidates]
-        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertEqual("inconclusive", result.decision_status)
+        self.assertEqual(len(result.candidates), len(result.evaluated_candidates))
 
     def test_output_directory_must_start_empty(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -232,7 +232,7 @@ class DiscoveryIntegrationTests(unittest.TestCase):
                 "# Local Agent Starter\n",
                 encoding="utf-8",
             )
-            (project / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+            (project / "LICENSE").write_text((Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"), encoding="utf-8")
             (project / "tests/test_one.py").write_text("VALUE = 1\n", encoding="utf-8")
 
             result = discover(

@@ -6,7 +6,9 @@ import math
 import re
 from datetime import datetime, timezone
 
+from .discovery_licenses import is_permissive_license, normalize_license, license_body_match
 from .discovery_models import Candidate, ScoreBreakdown
+from .discovery_query import plan_query
 
 _COMPONENT_MAX = {
     "feature_match": 25.0,
@@ -28,19 +30,10 @@ _UNKNOWN_PENALTY = {
     "reuse_readiness": 0.15,
     "adoption_health": 0.05,
 }
-_PERMISSIVE_LICENSES = {
-    "apache-2.0",
-    "apache 2.0",
-    "mit",
-    "bsd-2-clause",
-    "bsd-3-clause",
-    "isc",
-    "unlicense",
-    "0bsd",
-    "mit license",
-    "apache license 2.0",
-}
 _STOPWORDS = {"a", "an", "and", "for", "of", "or", "the", "to", "with"}
+_REUSE_RECOMMENDATIONS = frozenset({"use-as-library", "fork", "selective-reuse"})
+_FEATURE_RELEVANCE_THRESHOLD = 8.0
+_SOURCE_RANK_CAP = 20
 
 
 def tokenize(value: str) -> set[str]:
@@ -49,18 +42,6 @@ def tokenize(value: str) -> set[str]:
         for token in re.findall(r"[a-z0-9]+", value.lower().replace("_", "-").replace(".", "-"))
         if len(token) > 1 and token not in _STOPWORDS
     }
-
-
-def _permissive_license(value: str | None) -> bool:
-    normalized = (value or "").strip().lower().replace("_", "-")
-    if normalized in _PERMISSIVE_LICENSES:
-        return True
-    parts = [
-        part.strip(" ()")
-        for part in re.split(r"\s+(?:or|and)\s+|,", normalized)
-        if part.strip(" ()")
-    ]
-    return bool(parts) and all(part in _PERMISSIVE_LICENSES for part in parts)
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -112,11 +93,21 @@ def _feature_score(query: str, candidate: Candidate) -> tuple[float, list[str]]:
         + identity_bonus,
     )
     return score, [
+        f"core relevance query={query}",
         f"name token coverage={name_overlap:.2f}",
         f"description token coverage={description_overlap:.2f}",
         f"topic token coverage={topic_overlap:.2f}",
         f"exact phrase bonus={phrase_bonus:.0f}",
         f"candidate identity bonus={identity_bonus:.0f}",
+    ]
+
+
+def _record_constraint_checks(candidate: Candidate, constraints: tuple[str, ...]) -> None:
+    """Keep requested constraints explicit until a later gate verifies them."""
+
+    candidate.constraint_checks = [
+        f"requested constraint unverified: {constraint}"
+        for constraint in dict.fromkeys(constraints)
     ]
 
 
@@ -146,7 +137,7 @@ def _maintenance_score(candidate: Candidate, now: datetime) -> tuple[float, list
 
 def _dependency_score(candidate: Candidate) -> tuple[float, list[str]]:
     count = candidate.dependency_count
-    if count is None and candidate.inspection:
+    if count is None and candidate.inspection and candidate.source in {"github", "local"}:
         count = candidate.inspection.dependency_count
     if count is None:
         return 5.0, ["dependency count unknown; neutral score"]
@@ -173,11 +164,10 @@ def _security_score(candidate: Candidate) -> tuple[float, list[str]]:
     else:
         vulnerability_points = 3.0
         evidence.append("OSV status unknown; partial neutral score")
-    license_value = (candidate.license or "").strip().lower()
-    if _permissive_license(license_value):
+    if is_permissive_license(candidate.normalized_license):
         license_points = 4.0
-        evidence.append(f"permissive license={candidate.license}")
-    elif license_value:
+        evidence.append(f"permissive license={candidate.normalized_license}")
+    elif candidate.license:
         license_points = 2.0
         evidence.append(f"license requires review={candidate.license}")
     else:
@@ -247,9 +237,9 @@ def _reuse_score(candidate: Candidate) -> tuple[float, list[str]]:
     if candidate.description:
         score += 1.0
         evidence.append("description present")
-    if candidate.license:
+    if is_permissive_license(candidate.normalized_license):
         score += 1.0
-        evidence.append("license declared")
+        evidence.append(f"normalized permissive license={candidate.normalized_license}")
     if inspection:
         if inspection.docs_files:
             score += 2.0
@@ -325,7 +315,9 @@ def recommend(candidate: Candidate) -> str:
     feature = candidate.score.components["feature_match"]
     security = candidate.score.components["security_posture"]
     license_missing = not bool((candidate.license or "").strip())
-    license_incompatible = not license_missing and not _permissive_license(candidate.license)
+    license_incompatible = not license_missing and not is_permissive_license(
+        candidate.normalized_license
+    )
     receipt = candidate.inspection.test_receipt if candidate.inspection else None
     if receipt and receipt.status in {"failed", "timeout", "oom", "signaled", "zero_tests"}:
         return "reject"
@@ -357,13 +349,14 @@ def _score_coverage(candidate: Candidate) -> dict[str, float]:
     inspection_complete = bool(candidate.inspection and candidate.inspection.status == "inspected")
     inspection_dependency_known = bool(
         inspection_complete
+        and candidate.source in {"github", "local"}
         and candidate.inspection
         and candidate.inspection.dependency_count is not None
     )
     test_receipt = candidate.inspection.test_receipt if candidate.inspection else None
     security_coverage = (
         (0.60 if candidate.vulnerabilities_checked else 0.0)
-        + (0.25 if candidate.license else 0.0)
+        + (0.25 if candidate.normalized_license else 0.0)
         + (0.15 if candidate.security_policy is not None else 0.0)
     )
     return {
@@ -373,7 +366,7 @@ def _score_coverage(candidate: Candidate) -> dict[str, float]:
         "security_posture": security_coverage,
         "test_quality": 1.0 if inspection_complete else 0.35 if candidate.test_signals else 0.0,
         "portability": 1.0 if test_receipt and test_receipt.status == "passed" else 0.70 if candidate.portability_signals else 0.40 if candidate.language else 0.0,
-        "reuse_readiness": 1.0 if inspection_complete else 0.60 if candidate.repository_url and candidate.license else 0.30 if candidate.repository_url else 0.0,
+        "reuse_readiness": 1.0 if inspection_complete else 0.60 if candidate.repository_url and candidate.normalized_license else 0.30 if candidate.repository_url else 0.0,
         "adoption_health": 1.0
         if any(
             value is not None
@@ -393,6 +386,10 @@ def _score_coverage(candidate: Candidate) -> dict[str, float]:
 def _recommendation_receipt(candidate: Candidate) -> None:
     blockers: list[str] = []
     checks: list[str] = []
+    if candidate.license_review_required:
+        checks.append("complete MIT body recognized; review free-form copyright and surrounding text before reuse")
+    if candidate.inspection and candidate.source in {"pypi", "npm", "crates", "huggingface"}:
+        checks.append("verify package-specific source, tests and license; static inspection covers the repository, not a proven package subtree")
     if candidate.archived:
         blockers.append("repository is archived")
     if candidate.deprecated:
@@ -403,7 +400,7 @@ def _recommendation_receipt(candidate: Candidate) -> None:
         blockers.append("artifact is disabled")
     if not candidate.license:
         blockers.append("license missing or ambiguous")
-    elif not _permissive_license(candidate.license):
+    elif not is_permissive_license(candidate.normalized_license):
         blockers.append("license is outside the default permissive allowlist")
     if candidate.vulnerabilities:
         blockers.append("OSV findings require severity and remediation review")
@@ -417,11 +414,12 @@ def _recommendation_receipt(candidate: Candidate) -> None:
         checks.append("exact package-version OSV evidence unavailable")
     if not receipt or receipt.status != "passed":
         checks.append("authorized sandbox test pass unavailable")
+    checks.extend(candidate.constraint_checks)
     candidate.hard_blockers = blockers
-    candidate.required_checks = checks
+    candidate.required_checks = list(dict.fromkeys(checks))
     if blockers:
         candidate.recommendation_status = "blocked"
-    elif candidate.recommendation in {"use-as-library", "fork", "selective-reuse"}:
+    elif candidate.recommendation in _REUSE_RECOMMENDATIONS:
         candidate.recommendation_status = "ready" if not checks else "provisional"
     else:
         candidate.recommendation_status = "not-selected"
@@ -439,8 +437,13 @@ def _canonical_id(candidate: Candidate) -> str:
 
 def score_candidate(query: str, candidate: Candidate, *, now: datetime | None = None) -> ScoreBreakdown:
     current = now or datetime.now(timezone.utc)
+    query_plan = plan_query(query)
+    candidate.normalized_license = normalize_license(candidate.license, metadata=candidate.license_kind != "file")
+    candidate.license_body_match = license_body_match(candidate.license)
+    candidate.license_review_required = candidate.license_body_match is not None and candidate.normalized_license is None
+    _record_constraint_checks(candidate, query_plan.constraints)
     scorers = {
-        "feature_match": lambda: _feature_score(query, candidate),
+        "feature_match": lambda: _feature_score(query_plan.core_query, candidate),
         "maintenance_activity": lambda: _maintenance_score(candidate, current),
         "dependency_weight": lambda: _dependency_score(candidate),
         "security_posture": lambda: _security_score(candidate),
@@ -463,14 +466,22 @@ def score_candidate(query: str, candidate: Candidate, *, now: datetime | None = 
         _COMPONENT_MAX[name] * _UNKNOWN_PENALTY[name] * (1.0 - coverage_by_component[name])
         for name in _COMPONENT_MAX
     )
+    total = round(sum(components.values()), 2)
+    decision_score = round(max(0.0, total - unknown_cost), 2)
     for name, value in coverage_by_component.items():
         evidence[name].append(f"evidence coverage={value:.2f}")
+    evidence["decision_score"] = [
+        f"raw total={total:.2f}",
+        f"unknown evidence cost={unknown_cost:.2f}",
+        f"decision score=max(0, raw total - unknown evidence cost)={decision_score:.2f}",
+    ]
     breakdown = ScoreBreakdown(
-        round(sum(components.values()), 2),
-        components,
-        evidence,
+        total=total,
+        components=components,
+        evidence=evidence,
         coverage=round(coverage, 4),
         unknown_cost=round(unknown_cost, 2),
+        decision_score=decision_score,
     )
     candidate.score = breakdown
     candidate.canonical_id = _canonical_id(candidate)
@@ -479,14 +490,71 @@ def score_candidate(query: str, candidate: Candidate, *, now: datetime | None = 
     return breakdown
 
 
+def candidate_rank_key(
+    candidate: Candidate,
+) -> tuple[int, float, float, int, float, float, str, int, str, str]:
+    """Return a deterministic evidence-aware ordering key.
+
+    Provider ``raw_relevance`` values are intentionally excluded because their
+    scales are not comparable.  ``source_rank`` is capped and considered only
+    after the source name, so it can order otherwise-tied results from the same
+    provider without becoming a cross-provider score.
+    """
+
+    score = candidate.score
+    feature = score.components.get("feature_match", 0.0) if score else 0.0
+    decision = score.decision_score if score else 0.0
+    total = score.total if score else 0.0
+    coverage = score.coverage if score else 0.0
+    blocked = (
+        bool(candidate.hard_blockers)
+        or candidate.recommendation == "reject"
+        or candidate.recommendation_status == "blocked"
+    )
+    relevant = feature >= _FEATURE_RELEVANCE_THRESHOLD
+    usable = (
+        candidate.recommendation in _REUSE_RECOMMENDATIONS
+        and candidate.recommendation_status in {"ready", "provisional"}
+    )
+    if blocked:
+        eligibility_tier = 3
+    elif relevant and usable:
+        eligibility_tier = 0
+    elif relevant:
+        eligibility_tier = 1
+    else:
+        eligibility_tier = 2
+
+    if candidate.recommendation_status == "ready":
+        confidence_tier = 0
+    elif candidate.inspection and candidate.inspection.status == "inspected":
+        confidence_tier = 1
+    elif candidate.recommendation_status == "provisional":
+        confidence_tier = 2
+    else:
+        confidence_tier = 3
+
+    source_rank = candidate.source_rank
+    bounded_source_rank = (
+        min(_SOURCE_RANK_CAP, source_rank)
+        if isinstance(source_rank, int) and source_rank > 0
+        else _SOURCE_RANK_CAP + 1
+    )
+    return (
+        eligibility_tier,
+        -decision,
+        -feature,
+        confidence_tier,
+        -coverage,
+        -total,
+        candidate.source,
+        bounded_source_rank,
+        candidate.name.lower(),
+        candidate.url,
+    )
+
+
 def rank_candidates(query: str, candidates: list[Candidate], *, now: datetime | None = None) -> list[Candidate]:
     for candidate in candidates:
         score_candidate(query, candidate, now=now)
-    return sorted(
-        candidates,
-        key=lambda item: (
-            -(item.score.total if item.score else 0),
-            item.source,
-            item.name.lower(),
-        ),
-    )
+    return sorted(candidates, key=candidate_rank_key)

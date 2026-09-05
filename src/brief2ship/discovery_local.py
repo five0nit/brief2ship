@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .discovery_licenses import read_license_evidence
 from .discovery_models import Candidate, SourceReceipt
 from .discovery_providers import canonical_repository_url
 from .discovery_scoring import tokenize
@@ -100,22 +101,7 @@ def _description(path: Path) -> str:
 
 
 def _license(path: Path) -> str | None:
-    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "COPYING.md"):
-        text = _safe_text(path / name).lower()
-        if not text:
-            continue
-        if "mit license" in text:
-            return "MIT"
-        if "apache license" in text and "version 2" in text:
-            return "Apache-2.0"
-        if "mozilla public license" in text and "2.0" in text:
-            return "MPL-2.0"
-        if "gnu general public license" in text:
-            return "GPL"
-        if "redistribution and use in source and binary forms" in text:
-            return "BSD"
-        return None
-    return None
+    return read_license_evidence(path, _safe_text)
 
 
 def _language(markers: set[str], filenames: set[str]) -> str | None:
@@ -223,6 +209,7 @@ def _candidate(path: Path, root: Path, query_tokens: set[str], filenames: set[st
         repository_url=repository_url,
         description=description,
         license=_license(path),
+        license_kind="file",
         updated_at=_updated_at(path, marker_names),
         language=language,
         topics=sorted(marker_names),
@@ -312,7 +299,8 @@ def search_local(
                             )
                             break
                         entries.append(entry)
-            except OSError:
+            except OSError as exc:
+                warn_once("directory-read", f"local directory read failed: {exc}")
                 continue
             if stop_reason is not None:
                 break
@@ -336,7 +324,8 @@ def search_local(
                         and not name.startswith(".")
                     ):
                         child_directories.append(Path(entry.path))
-                except OSError:
+                except OSError as exc:
+                    warn_once("entry-read", f"local directory entry read failed: {exc}")
                     continue
             if depth < _MAX_DEPTH:
                 queue.extend((child, depth + 1) for child in child_directories)
@@ -366,6 +355,9 @@ def search_local(
     )
     candidates = found[:limit]
     receipt.returned = len(candidates)
-    if not candidates:
+    if receipt.warnings:
+        receipt.status = "partial"
+        receipt.error = "; ".join(receipt.warnings)
+    elif not candidates:
         receipt.status = "empty"
     return candidates, receipt

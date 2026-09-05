@@ -1,161 +1,199 @@
-# Code and Solution Discovery
+# Code discovery and v2 migration
 
-Brief2Ship v0.6 is the single repo-search contract. It searches scoped local workspaces plus public code/package ecosystems before greenfield implementation, normalizes candidates, checks evidence, optionally inspects a bounded set, reranks, and produces JSON/Markdown receipts.
+Brief2Ship searches a **bounded, selected source scope**. It does not prove that
+no reusable software exists. Normal discovery reads metadata and source; it
+never installs candidate dependencies or executes candidate code.
 
-## Quick start
+## Run
 
 ```bash
-brief2ship discover "local web scraper with robots support" \
+brief2ship discover "local robots-aware web scraper" \
   --local /path/to/scoped/workspace \
   --sources local,github,pypi,npm,crates,huggingface \
-  --per-source 10 \
-  --limit 10 \
-  --total-timeout 180 \
-  --inspect-top 3 \
-  --output discovery/
+  --per-source 5 --limit 5 --inspect-top 2 --total-timeout 180 \
+  --summary --output discovery/
 ```
 
-The output directory must be new or empty. Results include:
+The output directory must be new or empty. Omit `--summary` to preserve the
+existing stdout form: one Markdown receipt path. `--summary` emits a JSON object,
+not a replacement for the full receipts. Both forms use identical exit semantics.
+
+## Decision contract
+
+The v2 receipt separates:
+
+- `discovery_status`: source collection health (`complete`, `partial`, `failed`).
+  Complete means requested providers returned successfully, **not exhaustive recall**.
+- `decision_status`: `complete`, `provisional`, or `inconclusive`.
+- `overall_recommendation`: the supported reuse disposition, `build-clean`, or
+  `inconclusive` when the run cannot support an actionable disposition.
+- `selected_candidate_id`: stable identity of the selected, statically inspected
+  candidate, or null. A top-ranked lead is not necessarily selected.
+- `incomplete_reasons`: why a supported decision could not be made.
+
+`inconclusive` is an evidence state, not a sixth reuse strategy. Failed or partial
+provider collection, an empty result set, failed inspection or an uninspected
+lead cannot silently become `build-clean`. Increase a bounded inspection budget,
+repair a failed provider, narrow the scope explicitly or refine the brief;
+do not automatically authorize greenfield work on exit 5.
+
+An inspected reusable candidate may be selected **provisionally**. Required
+checks, unknown constraint matches and test/OSV gaps remain in its evidence.
+Provisional selection is a lead for further validation, not proof of production
+readiness. A supported clean-build conclusion applies only to the evaluated set
+and recorded policy, never the entire ecosystem.
+
+Exit codes for `discover`:
+
+| Code | Meaning |
+|---:|---|
+| 0 | Supported complete or provisional decision; inspect `decision_status` and required checks |
+| 2 | Invalid command-line arguments |
+| 3 | Safety policy blocked the operation |
+| 4 | Operational/input/output failure |
+| 5 | Receipts written, but evidence is insufficient for a decision |
+
+This changes v1, which returned success whenever candidates existed and could
+turn source outages or display truncation into `build-clean`.
+
+## Queries and evidence
+
+`query_plan` preserves the original brief, extracted core query, explicit
+constraints and up to three deterministic variants. The parser removes only
+recognized instruction/constraint patterns; it is not an LLM or a semantic
+requirements solver. `web scraper` survives the brief
+`local robots-aware web scraper`; `local` and `robots-aware` remain unverified
+checks rather than disappearing or being claimed as satisfied.
+
+GitHub searches at most three variants and uses reciprocal-rank fusion
+(`1 / (60 + source rank)`), deduplicating before the per-source candidate cap.
+Other registries search the core query under their existing bounded provider
+contracts. Each source receipt records attempted queries, endpoints, status,
+errors and warnings. Source ranks are tie-breakers, never raw cross-registry
+relevance comparisons. Later providers still share the total wall-clock budget;
+source failures and truncation must remain visible.
+
+Missing dependency metadata stays unknown. PyPI absent/null/malformed declarations
+are not an observed empty list. For npm, an absent `dependencies` field in an
+actually retrieved version document is contract-confirmed zero; a missing version
+document, failed hydration or malformed dependency field is unknown. Scores do
+not credit an unknown count as verified dependency-free.
+
+Package identity remains separate from repository evidence. `repository_evidence`
+records repository-level metadata merged into package leads. Repository-wide
+license, descriptions, dates and dependencies do not overwrite unknown or
+package-specific observations. `inspection` covers the whole repository, not a
+proven package subtree; package-level readiness retains an explicit scope check.
+
+Raw `license` evidence remains unchanged. `normalized_license` accepts supported
+metadata identifiers. `license_kind=file` requires a complete canonical grant;
+a title-only file is not treated as a metadata license identifier. Inspection
+retains the raw file and records a superseded repository metadata license in
+`repository_evidence.prior_metadata_license` when the observations differ.
+The normalizer accepts supported identifiers and exact canonical MIT grant text
+with whitespace and exact title variations. **Free-form copyright notices are
+recognized, not automatically approved**: `license_body_match=MIT` records a
+complete body, but `normalized_license=null` and `license_review_required=true`
+prevent reuse authorization. Arbitrary holder names and hidden conditions cannot
+be distinguished reliably by a regex; there is no holder allowlist or vocabulary
+denylist. This deliberately requires review for ordinary copyright-bearing MIT
+files too. Modified/truncated grants and unknown identifiers remain blocked from
+automatic reuse. This is a conservative reuse filter, not legal
+advice or a complete SPDX expression parser.
+
+## Scoring contract and ordering
+
+The existing raw `/100` component sum remains available as `score.total`:
+
+| Component | Maximum |
+|---|---:|
+| Core feature match / relevance | 25 |
+| Maintenance/activity | 15 |
+| Dependency weight | 10 |
+| Security/license/OSV posture | 15 |
+| Test quality and CI | 10 |
+| Portability | 10 |
+| Reuse readiness/adaptation | 10 |
+| Adoption/issue health | 5 |
+
+`score.decision_score = max(0, total - unknown_cost)` discounts missing evidence.
+Ranking first gates on feature relevance (at least 8/25), then usable evidence,
+ready/provisional status and decision score. Within-source rank is a stable,
+bounded tie-breaker. A popular unrelated project cannot beat a relevant reuse
+lead merely by accumulating maintenance and adoption points.
+
+Candidate disposition thresholds retain the raw component contract. Run-level
+selection additionally requires static inspection and successful source
+collection. `recommendation_status`, `required_checks`, `hard_blockers`, coverage
+and per-component evidence must be read alongside the score.
+
+## Repository inspection and complete receipts
 
 ```text
 discovery/
-├── discovery.json
-├── discovery.md
-├── candidates/
-│   ├── 01-....json
-│   └── ...
-└── worktrees/       # bounded public clones only; local candidates stay in place
+├── discovery.md       # bounded table plus complete candidate/inspection evidence
+├── discovery.json     # full reconstruction of the bounded evaluation
+├── candidates/        # one JSON file per evaluated candidate, not only display rows
+└── worktrees/         # bounded inspection clones when needed
 ```
 
-## Sources
+- `candidates` remains the display shortlist, bounded by `--limit`.
+- `evaluated_candidates` contains every deduplicated, scored candidate.
+- `inspection_decisions` records allocation reasons and results for attempted
+  inspections. An inspected candidate falling outside the table does not vanish.
+- The supported selected candidate is pinned into the display shortlist.
+- Changing `--limit` cannot change the build/reuse decision.
+- Markdown escapes untrusted candidate text and terminal/bidirectional controls;
+  JSON preserves raw evidence using JSON encoding.
 
-### Local workspaces
+The version markers change from `brief2ship-discovery-v1` and `brief2ship-score-v1`
+to `brief2ship-discovery-v2` and `brief2ship-score-v2`.
+The sandbox policy remains `brief2ship-bwrap-v2`. Consumers should reject unknown
+schemas rather than inferring success from a nonempty `candidates` array.
 
-Use repeatable `--local PATH` arguments. Supplying one automatically enables the `local` source; use `--sources local` for a fully offline local-only pass.
-
-Local discovery is read-only and bounded to five roots, 10,000 visited directories, 10,000 entries and 2,000 retained filenames per directory, depth 16, 500 candidate projects, and the shared `--total-timeout`. Roots are traversed round-robin and breadth-first so a broad root or deep subtree cannot starve another root's shallow projects. Hidden/VCS metadata, dependency/vendor trees, build outputs, caches, and symlinked directories are skipped. Project identity comes from real manifests or a Git checkout; README text alone does not turn every nested folder into a project. Credential-bearing remotes are rejected, remote query/fragment data is stripped, and symlinked `.git` metadata is never followed. Files are opened no-follow and read through a bounded descriptor. Receipts retain local paths, so review them before public sharing.
-
-`--inspect-top` statically inspects selected local projects in place. It never executes them unless the separate explicit sandbox-test gate is enabled.
-
-### GitHub
-
-Uses GitHub's REST repository-search API and repository/community-profile metadata. If a long-form target sentence returns zero repositories, Brief2Ship performs one deterministic, receipt-visible fallback using up to three non-generic terms; it never launches an unbounded query fan-out. Authentication is optional:
+## Regression benchmark and release gates
 
 ```bash
-export GH_TOKEN=...
-brief2ship discover "..." --sources github --output discovery/
+python scripts/benchmark-discovery.py --output quality-report.json
+python scripts/validate-release.py
 ```
 
-`GITHUB_TOKEN` is also accepted. Tokens are sent only to `api.github.com`, are never rendered, and only improve rate limits. Discovery API redirects are rejected so bearer headers cannot cross hosts. Private results are filtered even when an authenticated token can see them. Unauthenticated search remains supported but has a low rate limit.
+The benchmark uses committed **fictional, agent-authored synthetic fixtures**:
+short and constraint-rich briefs, non-obvious names, popular unrelated projects,
+blocked lexical matches, uninspected leads and failed providers. It measures
+top-one/top-three relevance, false clean-build outcomes, blocked winners and
+ranking latency. It performs no network requests or candidate execution.
+It is a regression gate, **not measured real-world recall or a human-reviewed
+accuracy benchmark**. Provider-query behavior and evidence failures have separate
+fixture-backed unit and integration tests.
 
-### PyPI
-
-PyPI's HTML search is currently protected by a JavaScript client challenge. Brief2Ship does not bypass it. Instead, it downloads the official `/simple/` package-name index, applies deterministic local package-name token matching, caches names for seven days, then fetches official package JSON for the best matches. Because the Simple index contains names rather than descriptions, PyPI discovery can miss packages whose relevance appears only in metadata text.
-
-The initial Simple index is approximately 42 MB and has a hard 50 MB response cap. Use `--refresh-cache` to replace the cached name list.
-
-### npm
-
-Uses the public npm registry search endpoint and package documents. It records version, repository, license, update date, relevance, declared runtime dependency count, and separate test/development signals.
-
-### crates.io
-
-Uses the public crate search and exact-version dependency endpoints with a descriptive Brief2Ship User-Agent and a one-request-per-second host throttle. It records downloads, activity, license, repository, version, and dependency count.
-
-### Hugging Face
-
-Searches public models, datasets, and Spaces. It records artifact kind, tags, library/pipeline metadata, license, downloads, likes, and last modification time. Hugging Face artifacts without canonical GitHub repositories can be scored but are not cloned by the GitHub inspector.
-
-### OSV
-
-For exact PyPI, npm, and crates.io package versions, Brief2Ship queries the free OSV API. Finding IDs are preserved. A failed or unsupported OSV query remains `unknown`; it is never silently treated as clean.
-
-## Scoring contract
-
-Scores are deterministic for the same evidence and clock:
-
-| Dimension | Maximum | Main evidence |
-|---|---:|---|
-| Feature match | 25 | query-token coverage in name, description, topics, and inspected manifests |
-| Maintenance/activity | 15 | last update/publish age; archived projects score zero |
-| Dependency weight | 10 | declared dependency count; lower is easier to audit/reuse |
-| Security posture | 15 | OSV result, declared license, security policy, archived state |
-| Test quality | 10 | test files, CI, detected test command, sandbox result |
-| Portability | 10 | ecosystem/language and explicit cross-platform/restriction signals |
-| Reuse readiness | 10 | repository, description, license, docs, examples, manifests, source footprint |
-| Adoption/health | 5 | stars/downloads plus forks, real watchers, contributor depth, and true issue-only ratio penalty after inspection |
-
-Unknown data receives an explicit partial-neutral component value, plus separate weighted evidence coverage and unknown-cost fields. It never becomes silent positive evidence. Every component contains a human-readable evidence list in JSON and Markdown. JSON records `brief2ship-discovery-v1`, `brief2ship-score-v1`, the candidate's package version or inspected commit identity, recommendation status, hard blockers, and required checks.
-
-Popularity cannot outweigh a missing license, archived status, failed sandbox test, poor feature match, or OSV evidence. OSV findings are conservatively blocking until severity and remediation are reviewed. Automatic reuse uses a conservative permissive-license allowlist; reciprocal, custom, or ambiguous licenses are blocked pending explicit compatibility review.
-
-## Recommendation contract
-
-Each candidate receives one disposition:
-
-- `use-as-library` — package candidate clears score/feature/security thresholds
-- `fork` — GitHub repository has strong direct fit, evidence, and reusable licensing
-- `selective-reuse` — licensed candidate has useful modules but needs meaningful adaptation
-- `reject` — candidate is blocked by license, archive, OSV, or sandbox-test evidence
-- `build-clean` — candidate does not clear the reuse threshold
-
-Each disposition also carries `ready`, `provisional`, `blocked`, or `not-selected` status. The run-level result chooses the highest-ranked candidate that clears reuse gates. If none clears them, it says `build-clean` and records the top score and disposition.
-
-## Repository inspection
-
-`--inspect-top N` is bounded to five candidates. A local candidate is statically inspected in place under the same file/read/size caps. For each public GitHub candidate Brief2Ship:
-
-1. accepts only a canonical public HTTPS GitHub repository URL;
-2. fetches current repository, contributor, real-watcher, homepage/demo, true issue-only count, and community-profile security evidence;
-3. blocks archived repositories;
-4. blocks repositories whose reported size is unknown or above 250,000 KB;
-5. shallow-clones one branch with no tags, no submodules, hooks disabled, and a 1 MB blob filter;
-6. ignores symlinks and generated/vendor trees;
-7. caps static traversal at 20,000 files and individual evidence reads at 2 MB;
-8. checks package/build manifests, dependency declarations, license text, test files, CI workflows, docs, examples, languages, source footprint, and commit hash;
-9. reruns deterministic scoring with the new evidence.
-
-Inspection does not execute repository code.
+CI additionally runs pinned Ruff/Pyright checks, benchmark validation, installed
+wheel round-trip smoke and full release validation from the extracted sdist.
+The Linux/Windows Python matrix remains 3.11, 3.12 and 3.13. A local pass does not
+claim GitHub Actions passed before this branch is pushed.
 
 ## Sandboxed tests
 
-Untrusted code execution is off by default. It needs all of:
+Tests remain opt-in using **both** `--test-top N` and `--allow-untrusted-tests`.
+They require the supported Linux Bubblewrap sandbox, no network, cleared
+environment, read-only candidate/work/temp/home filesystems and bounded
+CPU/process/memory/output/wall time. Missing controls block execution; there is
+no unsafe fallback. Static inspection and passing metadata gates never imply
+candidate tests ran. Native Windows onboarding does not claim Bubblewrap support.
 
-```bash
-brief2ship discover "..." \
-  --inspect-top 3 \
-  --test-top 1 \
-  --allow-untrusted-tests \
-  --output discovery/
-```
+## Sources and candidate dispositions
 
-The current execution sandbox requires Linux, Bubblewrap, `prlimit`, and `timeout`. It:
+- **Local workspaces:** repeatable `--local PATH` roots, bounded read-only breadth-first traversal,
+  no symlinked Git metadata, and in-place static inspection.
+- **GitHub:** public repositories with license/activity, stars, forks, watchers,
+  contributor and issue evidence where available. **Private results are filtered**
+  even when an optional `GH_TOKEN` or `GITHUB_TOKEN` is present.
+- **PyPI:** bounded name-index discovery and project JSON, not full-text semantic package search.
+- **npm:** package search and version-specific detail hydration.
+- **crates.io:** relevant Rust crate metadata and dependency evidence.
+- **Hugging Face:** model, dataset and Space metadata; gated/disabled artifacts remain blocked.
 
-- disables network access and unshares network, PID, IPC, UTS, cgroup, and user namespaces;
-- clears inherited environment variables and secrets;
-- does not mount the host home or Windows drives;
-- mounts only system runtime directories read-only;
-- mounts the disposable candidate copy, empty `/tmp`, and empty `/home` read-only, then remounts the sandbox root read-only;
-- caps additional processes, per-process address space (512 MiB), CPU time, per-file output size, and wall time;
-- uses offline package-manager settings;
-- captures bounded output tails and exit status.
-
-No dependencies are downloaded or installed during a test. The filesystem is intentionally read-only, so tests that require build artifacts, caches, or temporary files fail conservatively. Tests may also fail because a dependency is absent; the receipt distinguishes failure from evidence absence. If the sandbox is unavailable, testing is `blocked`. Brief2Ship never falls back to unsandboxed execution.
-
-## Limits and caveats
-
-- Public APIs can rate-limit, change fields, or temporarily fail. Other sources continue and every failure is recorded. Calls are capped by a 30-second per-request maximum, a 20-result per-source maximum, and one shared `--total-timeout` network budget (180 seconds by default, 600 maximum).
-- Local search is bounded and read-only but can expose absolute local paths in its receipt; do not publish those receipts without review.
-- GitHub search without a token is limited to its public unauthenticated quota.
-- PyPI discovery initially downloads a large official name index because no challenge-free search API exists.
-- Dependency counts are declared direct runtime evidence; optional extras and detected development-only dependencies are excluded where provider metadata distinguishes them. Counts are not complete transitive dependency graphs.
-- OSV reports known database entries, not proof that a package is vulnerability-free.
-- Static test/CI/docs signals do not prove quality; sandbox pass/fail is stronger but still bounded evidence.
-- License identifiers and detected license text require human review before commercial reuse.
-- Private results are filtered. Deprecated npm packages, yanked crates, gated artifacts, and disabled artifacts remain blocked evidence and cannot receive an automatic reuse recommendation.
-- Hugging Face model/dataset quality cannot be inferred from downloads alone.
-- This is code-solution triage, not a substitute for final architecture, legal, security, or performance review.
-
-## Free and bounded promise
-
-The core uses Python's standard library and public endpoints. No paid API is required. No browser automation, client-challenge bypass, CAPTCHA solving, proxy rotation, fingerprint evasion, credential harvesting, or authenticated-session scraping is used.
+Candidate dispositions remain `use-as-library`, `fork`, `selective-reuse`, `reject`
+and `build-clean`. A candidate-level recommendation is not itself a run-level
+decision. Read `recommendation_status`, evidence coverage and required checks;
+the overall run can remain inconclusive even with a nonempty shortlist.

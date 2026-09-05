@@ -34,6 +34,7 @@ def main() -> int:
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
         env=environment,
     )
+    run("task-quality regression benchmark", [sys.executable, "scripts/benchmark-discovery.py"], env=environment)
     print("Brief2Ship release validation passed")
     return 0
 
