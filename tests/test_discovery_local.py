@@ -49,7 +49,7 @@ class LocalDiscoveryTests(unittest.TestCase):
         self.assertEqual(str(project.resolve()), candidates[0].local_path)
         self.assertEqual(project.resolve().as_uri(), candidates[0].url)
         self.assertEqual("https://github.com/example/telegram-agent-kit", candidates[0].repository_url)
-        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"), candidates[0].license)
+        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes().decode("utf-8"), candidates[0].license)
         self.assertEqual("Python", candidates[0].language)
         self.assertTrue(candidates[0].security_policy)
         self.assertIn("repository test files", candidates[0].test_signals)

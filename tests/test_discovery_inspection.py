@@ -93,7 +93,7 @@ class InspectionTests(unittest.TestCase):
             self._fixture(root)
             result = inspect_tree(root, "https://github.com/example/fixture")
         self.assertEqual(result.status, "inspected")
-        self.assertEqual(result.license, (Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"))
+        self.assertEqual(result.license, (Path(__file__).resolve().parents[1] / "LICENSE").read_bytes().decode("utf-8"))
         self.assertEqual(result.dependency_count, 2)
         self.assertIn("pyproject.toml", result.manifest_files)
         self.assertEqual(len(result.test_files), 2)
@@ -255,7 +255,7 @@ class InspectionTests(unittest.TestCase):
         ):
             result = RepositoryInspector(InspectorClient(), Path(temporary)).inspect(candidate)
         self.assertEqual("inspected", result.status)
-        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8"), candidate.license)
+        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes().decode("utf-8"), candidate.license)
         self.assertTrue(candidate.security_policy)
         clone = next(command for command in calls if "clone" in command)
         self.assertIn("--depth=1", clone)

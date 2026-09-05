@@ -57,7 +57,7 @@ class SummaryTests(unittest.TestCase):
             with contextlib.redirect_stdout(stream):
                 code = main(["discover", "web scraper", "--output", root])
             self.assertEqual(5, code)
-            self.assertEqual(str(Path(root) / "discovery.md"), stream.getvalue().strip())
+            self.assertEqual(str(Path(root).resolve() / "discovery.md"), stream.getvalue().strip())
 
 
 if __name__ == "__main__":

@@ -26,6 +26,25 @@ class LicenseSourceTests(unittest.TestCase):
         self.assertIsNone(item.normalized_license)
         self.assertEqual("reject", item.recommendation)
 
+    def test_both_license_sources_preserve_lf_and_crlf_bytes(self):
+        for newline in ("\n", "\r\n"):
+            with self.subTest(newline=repr(newline)), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "web-scraper"
+                root.mkdir()
+                raw = newline.join(("MIT License", "", "Commercial use is prohibited.", ""))
+                (root / "pyproject.toml").write_text(
+                    '[project]\nname="web-scraper"\nversion="1.0"\n', encoding="utf-8"
+                )
+                (root / "LICENSE").write_bytes(raw.encode("utf-8"))
+                inspected = inspect_tree(root, root.resolve().as_uri())
+                candidates, _ = search_local("web scraper", (str(root),), limit=3)
+                self.assertEqual(1, len(candidates))
+                self.assertEqual(raw, inspected.license)
+                self.assertEqual(raw, candidates[0].license)
+                score_candidate("web scraper", candidates[0])
+                self.assertIsNone(candidates[0].normalized_license)
+                self.assertEqual("reject", candidates[0].recommendation)
+
     def test_local_title_only_license_file_is_not_a_canonical_grant(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "web-scraper"
