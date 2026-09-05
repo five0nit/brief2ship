@@ -6,10 +6,16 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _installed_entrypoint() -> Path:
+    suffix = sysconfig.get_config_var("EXE") or ""
+    return Path(sysconfig.get_path("scripts")) / ("brief2ship" + suffix)
 
 
 def main() -> int:
@@ -23,7 +29,7 @@ def main() -> int:
         package = json.loads(identity.stdout)
         if Path(package["file"]).resolve().is_relative_to(ROOT / "src"):
             raise RuntimeError("installed smoke imported the source checkout instead of a distribution")
-        entrypoint = Path(sys.executable).with_name("brief2ship.exe" if os.name == "nt" else "brief2ship")
+        entrypoint = _installed_entrypoint()
         version = subprocess.run([str(entrypoint), "--version"], cwd=temporary, env=environment,
                                  text=True, capture_output=True, check=True)
         if package["version"] not in version.stdout:

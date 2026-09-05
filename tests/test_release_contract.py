@@ -250,6 +250,20 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("npx skills add five0nit/brief2ship --skill brief2ship", readme)
         self.assertIn("claude plugin install brief2ship@brief2ship", readme)
 
+    def test_installed_smoke_uses_interpreter_scripts_scheme(self):
+        import runpy
+        from unittest.mock import patch
+
+        script = runpy.run_path(str(ROOT / "scripts/smoke-installed.py"))
+        with tempfile.TemporaryDirectory() as directory:
+            for scripts, suffix in (("Python/Scripts", ".exe"), ("venv/Scripts", ".exe"), ("venv/bin", "")):
+                expected = Path(directory) / scripts / ("brief2ship" + suffix)
+                with self.subTest(scripts=scripts), patch(
+                    "sysconfig.get_path", return_value=str(expected.parent)
+                ) as get_path, patch("sysconfig.get_config_var", return_value=suffix):
+                    self.assertEqual(expected, script["_installed_entrypoint"]())
+                    get_path.assert_called_once_with("scripts")
+
     def test_ci_exercises_quality_and_both_distributions(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         for required in ("ruff==0.16.6", "pyright==1.1.411", "scripts/benchmark-discovery.py",
