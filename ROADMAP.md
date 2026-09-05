@@ -10,13 +10,23 @@ Brief2Ship stays deliberately lean. Roadmap items must improve repo-first decisi
 - improve first-run examples, error messages, and receipt readability;
 - publish small, reproducible decision cases rather than unsupported savings claims.
 
-## Next — v0.7 evidence quality
+## v0.7 evidence quality: reliable reuse decisions
 
-- normalize common package-license metadata without weakening hard blockers;
-- improve multi-query recall while keeping provider limits deterministic;
-- make inspection-budget allocation easier to explain from receipts;
-- add fixture-backed examples for local/public deduplication and partial provider failure;
-- expose concise summary output without removing the full Markdown/JSON receipt.
+- explicit inconclusive decisions for incomplete collection or insufficient evidence;
+- display-only limits, complete evaluated/inspection receipts and selected identities;
+- bounded core/constraint query planning and relevance/confidence-aware ranking;
+- unknown dependency evidence, package/repository scoping and strict full-text MIT normalization;
+- concise JSON summary alongside full v2 receipts;
+- synthetic task-quality regressions plus automated lint/type/wheel/sdist gates.
+
+Included in v0.7.0. PyPI publication and broader host validation remain separate work.
+
+## Next evidence-quality work
+
+- human-reviewed real-world briefs and provider recall benchmarks, beyond synthetic regression fixtures;
+- package-subtree identification for monorepos before claiming package-specific test readiness;
+- additional canonical license formats with conservative, fixture-backed normalization;
+- better source-budget fairness and explainable query recall without mandatory model calls.
 
 ## Later — only with demonstrated demand
 

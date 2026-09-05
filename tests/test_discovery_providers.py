@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from brief2ship.discovery_http import DiscoveryHttpClient, HttpPayload
+from brief2ship.discovery_http import (
+    DiscoveryHttpClient,
+    DiscoverySourceError,
+    HttpPayload,
+)
 from brief2ship.discovery_providers import (
     canonical_repository_url,
     enrich_osv,
@@ -15,16 +19,21 @@ from brief2ship.discovery_providers import (
     search_npm,
     search_pypi,
 )
+from brief2ship.discovery_query import plan_query
 
 
 class FakeClient(DiscoveryHttpClient):
     def __init__(self):
         super().__init__()
         self.routes: dict[str, object] = {}
+        self.requested_json: list[str] = []
         self.simple = b'<a href="/simple/safe-web-scraper/">safe-web-scraper</a><a href="/simple/other/">other</a>'
 
     def get_json(self, url, *, headers=None, max_bytes=5_000_000):  # noqa: ARG002
+        self.requested_json.append(url)
         value = self.routes[url]
+        if isinstance(value, DiscoverySourceError):
+            raise value
         return value, HttpPayload(200, url, {"x-ratelimit-remaining": "42"}, json.dumps(value).encode())
 
     def post_json(self, url, body, *, max_bytes=5_000_000) -> tuple[object, HttpPayload]:  # noqa: ARG002
@@ -81,40 +90,81 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(receipt.rate_limit_remaining, 42)
         self.assertEqual(candidates[0].repository_size_kb, 123)
 
-    def test_github_retries_zero_result_sentence_with_bounded_focus_query(self):
+    def test_github_uses_bounded_rank_fusion_even_after_nonzero_results(self):
         client = FakeClient()
-        original = (
+        query = "Build a local deterministic web scraper with retry support"
+        variants = plan_query(query).variants
+        self.assertEqual(3, len(variants))
+        endpoints = [
             "https://api.github.com/search/repositories?"
-            "q=repo-first+multi-ecosystem+code+discovery+and+reuse+scoring&"
-            "per_page=1&page=1"
-        )
-        focused = (
-            "https://api.github.com/search/repositories?"
-            "q=repo+discovery+scoring&per_page=1&page=1"
-        )
-        client.routes[original] = {"items": []}
-        client.routes[focused] = {
-            "items": [
-                {
-                    "id": 9,
-                    "full_name": "owner/repo-discovery",
-                    "html_url": "https://github.com/owner/repo-discovery",
-                    "description": "repository discovery and scoring",
-                    "license": {"spdx_id": "MIT"},
-                    "pushed_at": "2026-07-01T00:00:00Z",
-                }
-            ]
+            f"q={variant.replace(' ', '+')}&per_page=2&page=1"
+            for variant in variants
+        ]
+        first = {
+            "id": 9,
+            "full_name": "owner/first-only",
+            "html_url": "https://github.com/owner/first-only",
+            "description": "first query result",
         }
+        repeated = {
+            "id": 10,
+            "full_name": "owner/repeated",
+            "html_url": "https://github.com/owner/repeated",
+            "description": "result present in multiple queries",
+        }
+        client.routes[endpoints[0]] = {"items": [first, repeated]}
+        client.routes[endpoints[1]] = {"items": [repeated]}
+        client.routes[endpoints[2]] = {"items": []}
 
-        candidates, receipt = search_github(
-            "repo-first multi-ecosystem code discovery and reuse scoring",
-            1,
-            client,
-        )
+        candidates, receipt = search_github(query, 2, client)
 
-        self.assertEqual(["owner/repo-discovery"], [candidate.name for candidate in candidates])
-        self.assertEqual([original, focused], receipt.endpoints)
-        self.assertTrue(any("focused fallback" in warning for warning in receipt.warnings))
+        self.assertEqual(["owner/repeated", "owner/first-only"], [candidate.name for candidate in candidates])
+        self.assertEqual([1, 2], [candidate.source_rank for candidate in candidates])
+        self.assertEqual(list(variants), receipt.queries)
+        self.assertEqual(endpoints, receipt.endpoints)
+        self.assertEqual(endpoints, client.requested_json)
+
+    def test_github_records_partial_query_failures_without_losing_results(self):
+        client = FakeClient()
+        query = "Build a local deterministic web scraper with retry support"
+        variants = plan_query(query).variants
+        endpoints = [
+            "https://api.github.com/search/repositories?"
+            f"q={variant.replace(' ', '+')}&per_page=1&page=1"
+            for variant in variants
+        ]
+        client.routes[endpoints[0]] = {"items": [{
+            "id": 11,
+            "full_name": "owner/survivor",
+            "html_url": "https://github.com/owner/survivor",
+        }]}
+        client.routes[endpoints[1]] = DiscoverySourceError("fixture timeout")
+        client.routes[endpoints[2]] = {"items": []}
+
+        candidates, receipt = search_github(query, 1, client)
+
+        self.assertEqual(["owner/survivor"], [candidate.name for candidate in candidates])
+        self.assertEqual("partial", receipt.status)
+        self.assertEqual(list(variants), receipt.queries)
+        self.assertEqual(endpoints, receipt.endpoints)
+        self.assertTrue(any("fixture timeout" in warning for warning in receipt.warnings))
+
+    def test_github_all_valid_empty_queries_are_ok_not_failed(self):
+        client = FakeClient()
+        query = "Build a local deterministic web scraper with retry support"
+        variants = plan_query(query).variants
+        for variant in variants:
+            endpoint = (
+                "https://api.github.com/search/repositories?"
+                f"q={variant.replace(' ', '+')}&per_page=1&page=1"
+            )
+            client.routes[endpoint] = {"items": []}
+
+        candidates, receipt = search_github(query, 1, client)
+
+        self.assertEqual([], candidates)
+        self.assertEqual("ok", receipt.status)
+        self.assertIsNone(receipt.error)
 
     def test_pypi_provider_uses_simple_index_and_package_json(self):
         client = FakeClient()
@@ -165,6 +215,68 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual(["safe-alpha"], [candidate.name for candidate in candidates])
 
+    def test_pypi_dependency_metadata_distinguishes_empty_from_unknown(self):
+        client = FakeClient()
+        names = (
+            "evidence-empty",
+            "evidence-malformed",
+            "evidence-missing",
+            "evidence-null",
+        )
+        client.simple = b"".join(
+            f'<a href="/simple/{name}/">{name}</a>'.encode() for name in names
+        )
+        for name in names:
+            info: dict[str, object] = {
+                "name": name,
+                "version": "1.0.0",
+                "summary": "dependency evidence",
+                "package_url": f"https://pypi.org/project/{name}/",
+            }
+            if name == "evidence-empty":
+                info["requires_dist"] = []
+            elif name == "evidence-malformed":
+                info["requires_dist"] = {"unexpected": "mapping"}
+            elif name == "evidence-null":
+                info["requires_dist"] = None
+            client.routes[f"https://pypi.org/pypi/{name}/json"] = {
+                "info": info,
+                "releases": {"1.0.0": []},
+            }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            candidates, receipt = search_pypi(
+                "evidence",
+                4,
+                client,
+                cache_dir=Path(temporary),
+            )
+
+        counts = {candidate.name: candidate.dependency_count for candidate in candidates}
+        self.assertEqual(0, counts["evidence-empty"])
+        self.assertIsNone(counts["evidence-malformed"])
+        self.assertIsNone(counts["evidence-missing"])
+        self.assertIsNone(counts["evidence-null"])
+        self.assertEqual([1, 2, 3, 4], [candidate.source_rank for candidate in candidates])
+        self.assertTrue(any("requires_dist" in warning for warning in receipt.warnings))
+
+    def test_pypi_no_name_matches_is_an_ok_empty_result(self):
+        client = FakeClient()
+        client.simple = b'<a href="/simple/unrelated/">unrelated</a>'
+
+        with tempfile.TemporaryDirectory() as temporary:
+            candidates, receipt = search_pypi(
+                "web scraper",
+                2,
+                client,
+                cache_dir=Path(temporary),
+            )
+
+        self.assertEqual([], candidates)
+        self.assertEqual("ok", receipt.status)
+        self.assertIsNone(receipt.error)
+        self.assertEqual(["web scraper"], receipt.queries)
+
     def test_npm_crates_and_huggingface_providers(self):
         client = FakeClient()
         npm_search = "https://registry.npmjs.org/-/v1/search?text=web+scraper&size=1"
@@ -188,6 +300,79 @@ class ProviderTests(unittest.TestCase):
         hf, receipt = search_huggingface("web scraper", 3, client)
         self.assertEqual(receipt.returned, 3)
         self.assertEqual({item.license for item in hf}, {"mit"})
+
+    def test_npm_dependency_hydration_keeps_failures_and_malformed_data_unknown(self):
+        client = FakeClient()
+        names = ("detail-empty", "detail-failed", "detail-malformed", "version-missing")
+        search_endpoint = (
+            "https://registry.npmjs.org/-/v1/search?text=detail&size=4"
+        )
+        client.routes[search_endpoint] = {
+            "objects": [
+                {
+                    "package": {
+                        "name": name,
+                        "version": "1.0.0",
+                        "links": {"npm": f"https://www.npmjs.com/package/{name}"},
+                    }
+                }
+                for name in names
+            ]
+        }
+        client.routes["https://registry.npmjs.org/detail-empty"] = {
+            "versions": {"1.0.0": {}}
+        }
+        client.routes["https://registry.npmjs.org/detail-failed"] = (
+            DiscoverySourceError("fixture detail failure")
+        )
+        client.routes["https://registry.npmjs.org/detail-malformed"] = {
+            "versions": {"1.0.0": {"dependencies": ["not", "a", "mapping"]}}
+        }
+        client.routes["https://registry.npmjs.org/version-missing"] = {
+            "versions": {"2.0.0": {"dependencies": {}}}
+        }
+
+        candidates, receipt = search_npm("detail", 4, client)
+
+        counts = {candidate.name: candidate.dependency_count for candidate in candidates}
+        self.assertEqual(0, counts["detail-empty"])
+        self.assertIsNone(counts["detail-failed"])
+        self.assertIsNone(counts["detail-malformed"])
+        self.assertIsNone(counts["version-missing"])
+        self.assertEqual([1, 2, 3, 4], [candidate.source_rank for candidate in candidates])
+        self.assertEqual(["detail"], receipt.queries)
+        self.assertTrue(any("fixture detail failure" in warning for warning in receipt.warnings))
+        self.assertTrue(any("dependencies" in warning for warning in receipt.warnings))
+        self.assertTrue(any("version 1.0.0" in warning for warning in receipt.warnings))
+
+    def test_other_registry_providers_use_one_core_query(self):
+        client = FakeClient()
+        query = "Build a local web scraper"
+        core = plan_query(query).core_query
+        npm_search = (
+            "https://registry.npmjs.org/-/v1/search?text=web+scraper&size=1"
+        )
+        client.routes[npm_search] = {"objects": []}
+        crates_search = (
+            "https://crates.io/api/v1/crates?"
+            "q=web+scraper&sort=relevance&per_page=1&page=1"
+        )
+        client.routes[crates_search] = {"crates": []}
+        for plural in ("models", "datasets", "spaces"):
+            endpoint = (
+                f"https://huggingface.co/api/{plural}?"
+                "search=web+scraper&limit=1&full=true"
+            )
+            client.routes[endpoint] = []
+
+        _, npm_receipt = search_npm(query, 1, client)
+        _, crates_receipt = search_crates(query, 1, client)
+        _, hf_receipt = search_huggingface(query, 1, client)
+
+        self.assertEqual("web scraper", core)
+        self.assertEqual([core], npm_receipt.queries)
+        self.assertEqual([core], crates_receipt.queries)
+        self.assertEqual([core], hf_receipt.queries)
 
     def test_osv_findings_are_preserved(self):
         from brief2ship.discovery_models import Candidate

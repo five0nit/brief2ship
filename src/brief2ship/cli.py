@@ -14,7 +14,7 @@ from . import __version__
 from .crawl import crawl_site
 from .discovery import discover as discover_candidates
 from .discovery_models import DiscoveryConfig
-from .discovery_render import write_discovery
+from .discovery_render import render_discovery_summary, write_discovery
 from .errors import Brief2ShipError, OutputError, PolicyError
 from .models import ScrapeConfig
 from .render import atomic_write, render_result, write_crawl
@@ -118,6 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     discover.add_argument("query")
     discover.add_argument("--output", type=Path, required=True)
+    discover.add_argument("--summary", action="store_true", help="print a concise JSON decision and source-health summary instead of only the receipt path")
     discover.add_argument(
         "--sources",
         type=_sources,
@@ -231,8 +232,11 @@ def _run_discover(args: argparse.Namespace) -> int:
     )
     result = discover_candidates(args.query, config, output_dir=args.output)
     receipt = write_discovery(result, args.output.expanduser().resolve())
-    sys.stdout.write(f"{receipt}\n")
-    return 0 if result.candidates else 4
+    if args.summary:
+        sys.stdout.write(render_discovery_summary(result, args.output.expanduser().resolve()))
+    else:
+        sys.stdout.write(f"{receipt}\n")
+    return 5 if result.decision_status == "inconclusive" or result.discovery_status != "complete" else 0
 
 
 def main(argv: list[str] | None = None) -> int:

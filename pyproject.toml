@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brief2ship"
-version = "0.6.2"
+version = "0.7.0"
 description = "Repo-first discovery for AI coding agents: search and score existing code before building, then ship with proof."
 readme = "README.md"
 requires-python = ">=3.11"

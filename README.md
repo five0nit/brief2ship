@@ -12,14 +12,27 @@ Brief2Ship is a dependency-free Python CLI and portable Agent Skill for **repo-f
 
 ![Terminal demo showing Brief2Ship selecting the local repository for reuse after evidence scoring](https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.2/docs/assets/brief2ship-demo.gif)
 
-*Real dogfood receipt: `local/brief2ship`, 70.50/100, inspected, `selective-reuse`. [Read the source transcript](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/assets/demo-transcript.txt) or [see more decision cases](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/case-studies.md).*
+*Historical v0.6.2 dogfood receipt (not a v0.7.0 result): `local/brief2ship`, 70.50/100, inspected, `selective-reuse`. [Read the source transcript](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/assets/demo-transcript.txt) or [see more decision cases](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/case-studies.md).*
+
+## v0.7.0 — reliable reuse decisions
+
+This release adds reliable reuse decisions: explicit `inconclusive` outcomes,
+intent-preserving queries, complete evidence receipts, and `--summary` JSON output.
+Discovery receipt and scoring contracts are now v2. Read the
+[migration and decision guide](docs/code-discovery.md) before updating automation;
+exit `5` means insufficient evidence, not permission to build from scratch.
+For native Windows setup, see [PowerShell onboarding](docs/windows-powershell.md).
+
+Install **v0.7.0** using the tagged commands below. The demo above is explicitly
+pinned to v0.6.2 historical evidence; its result is not a v0.7.0 claim.
+PyPI publication remains separate from the GitHub release.
 
 ## 30-second quickstart
 
 Run the tagged release without a permanent install:
 
 ```bash
-uvx --from git+https://github.com/five0nit/brief2ship.git@v0.6.2 \
+uvx --from git+https://github.com/five0nit/brief2ship.git@v0.7.0 \
   brief2ship discover "local robots-aware web scraper" \
   --sources github,pypi,npm,crates,huggingface \
   --limit 5 --inspect-top 2 \
@@ -29,7 +42,7 @@ uvx --from git+https://github.com/five0nit/brief2ship.git@v0.6.2 \
 Add a bounded local workspace to the same comparison:
 
 ```bash
-uvx --from git+https://github.com/five0nit/brief2ship.git@v0.6.2 \
+uvx --from git+https://github.com/five0nit/brief2ship.git@v0.7.0 \
   brief2ship discover "local robots-aware web scraper" \
   --local /path/to/scoped/workspace \
   --sources local,github,pypi,npm,crates,huggingface \
@@ -47,7 +60,8 @@ discovery/
 └── worktrees/       # bounded inspection clones when required
 ```
 
-The result records one explicit disposition:
+Conclusive discovery records one explicit disposition (inconclusive runs record
+`inconclusive` when evidence cannot support a decision):
 
 - `use-as-library`
 - `fork`
@@ -95,7 +109,7 @@ Brief2Ship inspects manifests, dependency declarations, licenses, tests, CI, doc
 ### Versioned GitHub release
 
 ```bash
-uv tool install git+https://github.com/five0nit/brief2ship.git@v0.6.2
+uv tool install git+https://github.com/five0nit/brief2ship.git@v0.7.0
 brief2ship doctor
 ```
 
@@ -141,13 +155,13 @@ Brief2Ship follows the open [Agent Skills specification](https://agentskills.io/
 GitHub CLI 2.90 or newer can install the tagged skill for supported agent hosts:
 
 ```bash
-gh skill install five0nit/brief2ship brief2ship@v0.6.2
+gh skill install five0nit/brief2ship brief2ship@v0.7.0
 ```
 
 Example host-specific installation:
 
 ```bash
-gh skill install five0nit/brief2ship brief2ship@v0.6.2 \
+gh skill install five0nit/brief2ship brief2ship@v0.7.0 \
   --agent claude-code --scope user
 ```
 
@@ -172,7 +186,7 @@ Default profile:
 
 ```bash
 hermes skills install \
-  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.2/skills/brief2ship/SKILL.md \
+  https://raw.githubusercontent.com/five0nit/brief2ship/v0.7.0/skills/brief2ship/SKILL.md \
   --category software-development \
   --yes
 ```
@@ -182,7 +196,7 @@ Named profile:
 ```bash
 hermes profile create qa --no-alias --no-skills
 hermes --profile qa skills install \
-  https://raw.githubusercontent.com/five0nit/brief2ship/v0.6.2/skills/brief2ship/SKILL.md \
+  https://raw.githubusercontent.com/five0nit/brief2ship/v0.7.0/skills/brief2ship/SKILL.md \
   --category software-development \
   --yes
 hermes --profile qa skills list
@@ -252,16 +266,21 @@ See [docs/free-scraping.md](docs/free-scraping.md) and [docs/code-discovery.md](
 
 ## Proof and trust
 
-The v0.6.1 compatibility release passed:
+The v0.7.0 implementation passed local verification:
 
-- 141 tests on Python 3.11, 3.12, and 3.13;
-- seven Linux/Windows GitHub Actions jobs;
-- Ruff critical selectors;
-- Pyright with 0 errors and 0 warnings;
-- clean wheel and extracted-sdist tests;
-- live HTTPS positive and hostname-mismatch negative controls.
+- 191 tests on Python 3.11, 3.12, and 3.13;
+- native Windows validation, with four platform-specific skips;
+- 24/24 synthetic decision-regression cases (not real-world accuracy claims);
+- Ruff critical selectors and Pyright with 0 errors and 0 warnings;
+- clean installed-wheel and extracted-sdist checks;
+- independent review and a live five-source discovery probe.
 
-Current source-checkout evidence is retained at `docs/releases/v0.6.2-discoverability-receipt.md`. Release receipts remain outside built packages so their artifact hashes cannot become self-referential. Historical v0.6.1 evidence remains at `docs/releases/v0.6.1-single-search-skill-receipt.md`.
+GitHub Actions runs the Linux/Windows matrix and optional Trafilatura adapter on
+pull requests and `main`; inspect the CI badge for the current hosted result.
+Historical pre-publication evidence is retained at `docs/releases/v0.7.0-local-verification.md`.
+Release receipts remain outside built packages so their artifact hashes cannot become self-referential.
+Earlier evidence remains at `docs/releases/v0.6.2-discoverability-receipt.md` and
+`docs/releases/v0.6.1-single-search-skill-receipt.md`.
 
 ## Repository map
 

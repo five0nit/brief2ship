@@ -29,6 +29,40 @@ def render_discovery_json(result: DiscoveryResult) -> str:
     return json.dumps(result.to_dict(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+def _all_candidates(result: DiscoveryResult) -> list[Candidate]:
+    return result.evaluated_candidates or result.candidates
+
+
+def render_discovery_summary(result: DiscoveryResult, output_dir: Path) -> str:
+    """Compact JSON for operators; full receipts remain authoritative."""
+    evaluated = _all_candidates(result)
+    selected = next((item for item in evaluated if item.canonical_id == result.selected_candidate_id), None) if result.selected_candidate_id else None
+    top = selected or (result.candidates[0] if result.candidates else None)
+    score = top.score if top else None
+    payload = {
+        "decision": result.overall_recommendation,
+        "decision_status": result.decision_status,
+        "discovery_status": result.discovery_status,
+        "selected_candidate": _safe(selected.name) if selected else None,
+        "top_candidate": _safe(top.name) if top else None,
+        "score": score.total if score else None,
+        "decision_score": score.decision_score if score else None,
+        "coverage": score.coverage if score else None,
+        "evaluated_count": len(evaluated),
+        "displayed_count": len(result.candidates),
+        "hard_blocker_count": sum(len(item.hard_blockers) for item in evaluated),
+        "required_checks": [_safe(value) for value in top.required_checks] if top else [],
+        "incomplete_reasons": [_safe(value) for value in result.incomplete_reasons],
+        "sources": [{
+            "source": item.source, "status": item.status, "returned": item.returned,
+            "error": _safe(item.error) if item.error else None,
+            "warning_count": len(item.warnings),
+        } for item in result.sources],
+        "receipts": {kind: str(output_dir / f"discovery.{extension}") for kind, extension in (("markdown", "md"), ("json", "json"))},
+    }
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 def _score(candidate: Candidate, key: str) -> str:
     if not candidate.score:
         return "0.00"
@@ -53,15 +87,22 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
         "## Decision",
         "",
         f"- Overall: {_code(result.overall_recommendation)}",
+        f"- Decision status: {_code(result.decision_status)}",
+        f"- Discovery status: {_code(result.discovery_status)}",
+        f"- Selected candidate: {_code(result.selected_candidate_id or 'none; shortlist entries are leads')}",
         f"- Reason: {_code(result.recommendation_reason)}",
         f"- Query: {_code(result.query)}",
         f"- Started: {_code(result.started_at)}",
         f"- Completed: {_code(result.completed_at)}",
+        f"- Displayed / evaluated candidates: {len(result.candidates)} / {len(_all_candidates(result))}",
+        f"- Core query: {_code(result.query_plan.get('core_query', result.query))}",
+        f"- Requested constraints: {_code('; '.join(result.query_plan.get('constraints', [])) or 'none extracted')}",
+        f"- Incomplete evidence: {_code('; '.join(result.incomplete_reasons) or 'none')}",
         "",
         "## Ranked candidates",
         "",
-        "| # | Score | Coverage | Candidate | Source | Feature | Activity | Dependencies | Security | Tests | Portability | Reuse | Adoption | Recommendation | Status |",
-        "|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+        "| # | Score | Decision score | Coverage | Candidate | Source | Feature | Activity | Dependencies | Security | Tests | Portability | Reuse | Adoption | Recommendation | Status |",
+        "|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for index, candidate in enumerate(result.candidates, 1):
         lines.append(
@@ -70,6 +111,7 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
                 [
                     str(index),
                     f"{candidate.score.total if candidate.score else 0:.2f}",
+                    f"{candidate.score.decision_score if candidate.score else 0:.2f}",
                     f"{candidate.score.coverage if candidate.score else 0:.2f}",
                     _code(candidate.name),
                     _code(candidate.source),
@@ -87,8 +129,13 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
             )
             + " |"
         )
+    lines.extend(["", "## Inspection allocation", ""])
+    for allocation in result.inspection_decisions:
+        lines.append(f"- {_code(allocation['candidate'])}: {_code(allocation['reason'])}; status={_code(allocation['status'])}")
+    if not result.inspection_decisions:
+        lines.append("No inspection slots used; candidates remain unverified leads.")
     lines.extend(["", "## Candidate evidence", ""])
-    for index, candidate in enumerate(result.candidates, 1):
+    for index, candidate in enumerate(_all_candidates(result), 1):
         lines.extend(
             [
                 f"### {index}. {_code(candidate.name)}",
@@ -100,6 +147,8 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
                 f"- Version: {_code(candidate.version or 'unknown')}",
                 f"- Canonical identity: {_code(candidate.canonical_id or 'unknown')}",
                 f"- License: {_code(candidate.license or 'unknown')}",
+                f"- Normalized license: {_code(candidate.normalized_license or 'unknown')}",
+                f"- Requested constraint checks: {_code('; '.join(candidate.constraint_checks) or 'none')}",
                 f"- Activity: {_code(candidate.updated_at or candidate.published_at or 'unknown')}",
                 f"- Dependencies: {_code(candidate.dependency_count if candidate.dependency_count is not None else 'unknown')}",
                 f"- Stars / forks / watchers: {_code(' / '.join((_observed_number(candidate.stars), _observed_number(candidate.forks), _observed_number(candidate.watchers))))}",
@@ -142,6 +191,8 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
         )
         if source.error:
             lines.append(f"  - Error: {_code(source.error)}")
+        if source.queries:
+            lines.append(f"  - Queries: {_code('; '.join(source.queries))}")
         for warning in source.warnings:
             lines.append(f"  - Warning: {_code(warning)}")
     lines.extend(["", "## Limitations", ""])
@@ -155,7 +206,7 @@ def write_discovery(result: DiscoveryResult, output_dir: Path) -> Path:
     receipt = atomic_write(output_dir / "discovery.md", render_discovery_markdown(result))
     candidates_dir = output_dir / "candidates"
     candidates_dir.mkdir(exist_ok=True)
-    for index, candidate in enumerate(result.candidates, 1):
+    for index, candidate in enumerate(_all_candidates(result), 1):
         filename = re.sub(r"[^A-Za-z0-9_.-]+", "-", candidate.name).strip("-.")[:80] or "candidate"
         atomic_write(
             candidates_dir / f"{index:02d}-{filename}.json",

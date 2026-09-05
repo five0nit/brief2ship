@@ -19,7 +19,7 @@ class LocalDiscoveryTests(unittest.TestCase):
             encoding="utf-8",
         )
         (project / "README.md").write_text(readme, encoding="utf-8")
-        (project / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+        (project / "LICENSE").write_bytes((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes())
         (project / "SECURITY.md").write_text("# Security\n", encoding="utf-8")
         (project / "tests/test_smoke.py").write_text("VALUE = 1\n", encoding="utf-8")
         (project / ".git/config").write_text(
@@ -49,7 +49,7 @@ class LocalDiscoveryTests(unittest.TestCase):
         self.assertEqual(str(project.resolve()), candidates[0].local_path)
         self.assertEqual(project.resolve().as_uri(), candidates[0].url)
         self.assertEqual("https://github.com/example/telegram-agent-kit", candidates[0].repository_url)
-        self.assertEqual("MIT", candidates[0].license)
+        self.assertEqual((Path(__file__).resolve().parents[1] / "LICENSE").read_bytes().decode("utf-8"), candidates[0].license)
         self.assertEqual("Python", candidates[0].language)
         self.assertTrue(candidates[0].security_policy)
         self.assertIn("repository test files", candidates[0].test_signals)
@@ -145,6 +145,7 @@ class LocalDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([str(target.resolve())], [candidate.local_path for candidate in candidates])
         self.assertTrue(any("stopped" in warning for warning in receipt.warnings))
+        self.assertEqual("partial", receipt.status)
 
     def test_local_scan_round_robins_roots_under_global_directory_cap(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -170,6 +171,7 @@ class LocalDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([str(target.resolve())], [candidate.local_path for candidate in candidates])
         self.assertTrue(any("stopped" in warning for warning in receipt.warnings))
+        self.assertEqual("partial", receipt.status)
 
     def test_local_scan_caps_entries_per_directory(self):
         with tempfile.TemporaryDirectory() as temporary:

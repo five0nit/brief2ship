@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .discovery_http import DiscoveryHttpClient
+from .discovery_decision import decide
 from .discovery_inspection import RepositoryInspector
 from .discovery_local import search_local
 from .discovery_models import Candidate, DiscoveryConfig, DiscoveryResult, SourceReceipt
 from .discovery_providers import PROVIDERS, enrich_osv, search_pypi
+from .discovery_query import plan_query
 from .discovery_scoring import rank_candidates
 from .errors import OutputError
 
@@ -54,6 +57,19 @@ def _merge_candidate(existing: Candidate, incoming: Candidate) -> Candidate:
         primary, secondary = incoming, existing
     else:
         primary, secondary = existing, incoming
+    package_scope = primary.source in package_sources and secondary.source in {"github", "local"}
+    preserved = {}
+    if package_scope:
+        scoped_fields = (
+            "description", "version", "license", "license_kind", "updated_at", "published_at", "dependency_count",
+            "topics", "test_signals", "portability_signals", "reuse_signals", "downloads",
+            "vulnerabilities_checked", "vulnerabilities", "vulnerability_evidence",
+        )
+        preserved = {name: deepcopy(getattr(primary, name)) for name in scoped_fields}
+        primary.repository_evidence = {
+            name: deepcopy(getattr(secondary, name))
+            for name in (*scoped_fields, "source", "url", "stars", "forks", "watchers", "contributors")
+        }
     primary.aliases = sorted(
         set(primary.aliases + secondary.aliases + [f"{secondary.source}:{secondary.name}", secondary.url])
     )
@@ -117,6 +133,8 @@ def _merge_candidate(existing: Candidate, incoming: Candidate) -> Candidate:
     primary.test_signals = sorted(set(primary.test_signals + secondary.test_signals))
     primary.portability_signals = sorted(set(primary.portability_signals + secondary.portability_signals))
     primary.reuse_signals = sorted(set(primary.reuse_signals + secondary.reuse_signals))
+    for name, value in preserved.items():
+        setattr(primary, name, value)
     return primary
 
 
@@ -170,7 +188,7 @@ def _inspection_priority(candidate: Candidate) -> tuple[float, float, str, str]:
         if candidate.score
         else 0.0
     )
-    total = candidate.score.total if candidate.score else 0.0
+    total = candidate.score.decision_score if candidate.score else 0.0
     return (-feature_match, -total, candidate.source, candidate.name.lower())
 
 
@@ -188,6 +206,7 @@ def discover(
         raise ValueError("query must contain between 2 and 300 non-whitespace characters")
     destination = prepare_output_directory(output_dir)
     started_at = _now()
+    query_plan = plan_query(normalized_query)
     http = client or DiscoveryHttpClient(
         timeout=config.timeout,
         total_timeout=config.total_timeout,
@@ -219,6 +238,11 @@ def discover(
             found = []
             receipt = SourceReceipt(source, "failed", config.per_source, error=f"invalid source response: {exc}")
         candidates.extend(found)
+        if not receipt.queries:
+            receipt.queries = [normalized_query]
+        for ordinal, item in enumerate(found, 1):
+            if item.source_rank is None:
+                item.source_rank = ordinal
         receipts.append(receipt)
     candidates = deduplicate_candidates(candidates)
     limitations = [
@@ -233,33 +257,22 @@ def discover(
         if warning and candidate.source in {"pypi", "npm", "crates"}:
             limitations.append(f"OSV {candidate.source}:{candidate.name}: {warning}")
     ranked = rank_candidates(normalized_query, candidates)
+    inspected: list[tuple[Candidate, str]] = []
     if config.inspect_top:
         inspector = RepositoryInspector(http, destination / "worktrees")
         shortlist = sorted(ranked, key=_inspection_priority)[: config.inspect_top]
         for index, candidate in enumerate(shortlist):
+            feature = candidate.score.components.get("feature_match", 0) if candidate.score else 0
+            reason = f"slot {index + 1}: feature fit {feature:.2f}/25, then confidence-adjusted score"
             candidate.inspection = inspector.inspect(candidate, run_tests=index < config.test_top)
+            inspected.append((candidate, reason))
         ranked = rank_candidates(normalized_query, ranked)
-    ranked = ranked[: config.limit]
-    if ranked:
-        top = ranked[0]
-        reusable = next(
-            (
-                candidate
-                for candidate in ranked
-                if candidate.recommendation in {"use-as-library", "fork", "selective-reuse"}
-                and candidate.recommendation_status in {"ready", "provisional"}
-            ),
-            None,
-        )
-        if reusable:
-            overall = reusable.recommendation
-            reason = f"candidate {reusable.name} scored {reusable.score.total if reusable.score else 0:.2f}/100 with {reusable.recommendation_status} evidence"
-        else:
-            overall = "build-clean"
-            reason = f"no candidate cleared reuse gates; top score was {top.score.total if top.score else 0:.2f}/100 ({top.recommendation})"
-    else:
-        overall = "build-clean"
-        reason = "no candidates were returned by the selected sources"
+    decision = decide(ranked, receipts)
+    # A selected candidate must remain visible even when only one row is shown.
+    displayed = ranked[: config.limit]
+    if decision.selected_id and not any(item.canonical_id == decision.selected_id for item in displayed):
+        selected = next(item for item in ranked if item.canonical_id == decision.selected_id)
+        displayed = [selected, *displayed[: config.limit - 1]]
     config_receipt = {
         "sources": list(config.sources),
         "local_roots": [
@@ -280,9 +293,21 @@ def discover(
         started_at=started_at,
         completed_at=_now(),
         config=config_receipt,
-        candidates=ranked,
+        candidates=displayed,
         sources=receipts,
-        overall_recommendation=overall,
-        recommendation_reason=reason,
+        overall_recommendation=decision.recommendation,
+        recommendation_reason=decision.reason,
         limitations=sorted(set(limitations)),
+        evaluated_candidates=ranked,
+        selected_candidate_id=decision.selected_id,
+        decision_status=decision.status,
+        discovery_status=decision.discovery_status,
+        incomplete_reasons=decision.incomplete_reasons,
+        query_plan=asdict(query_plan),
+        inspection_decisions=[{
+            "candidate_id": item.canonical_id or item.name,
+            "candidate": item.name,
+            "reason": reason,
+            "status": item.inspection.status if item.inspection else "not-run",
+        } for item, reason in inspected],
     )

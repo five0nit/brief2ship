@@ -4,8 +4,18 @@ import unittest
 from datetime import datetime, timezone
 
 from brief2ship.discovery import deduplicate_candidates
-from brief2ship.discovery_models import Candidate, DiscoveryConfig
-from brief2ship.discovery_scoring import rank_candidates, score_candidate
+from brief2ship.discovery_models import (
+    Candidate,
+    DiscoveryConfig,
+    InspectionResult,
+    ScoreBreakdown,
+    TestReceipt,
+)
+from brief2ship.discovery_scoring import (
+    candidate_rank_key,
+    rank_candidates,
+    score_candidate,
+)
 
 
 class DiscoveryScoringTests(unittest.TestCase):
@@ -127,7 +137,8 @@ class DiscoveryScoringTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].source, "pypi")
         self.assertEqual(merged[0].stars, 900)
-        self.assertEqual(merged[0].license, "MIT")
+        self.assertIsNone(merged[0].license)
+        self.assertEqual(merged[0].repository_evidence["license"], "MIT")
         self.assertIn("github:owner/tool", merged[0].aliases)
 
     def test_dedup_does_not_mutate_provider_candidates(self):
@@ -356,6 +367,174 @@ class DiscoveryScoringTests(unittest.TestCase):
         self.assertLess(candidate.score.total if candidate.score else 100, 45)
         self.assertEqual("reject", candidate.recommendation)
         self.assertEqual("blocked", candidate.recommendation_status)
+
+    def test_canonical_mit_body_is_recognized_without_approving_freeform_notice(self):
+        raw_license = '''The MIT License (MIT)
+
+Copyright (c) 2026 Example Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.'''
+        candidate = Candidate(
+            source="github",
+            name="owner/robots-discovery",
+            url="https://github.com/owner/robots-discovery",
+            repository_url="https://github.com/owner/robots-discovery",
+            description="robots package discovery",
+            license=raw_license,
+            vulnerabilities_checked=True,
+        )
+
+        score_candidate("robots package discovery", candidate)
+
+        self.assertEqual(raw_license, candidate.license)
+        self.assertIsNone(candidate.normalized_license)
+        self.assertEqual("MIT", candidate.license_body_match)
+        self.assertTrue(candidate.license_review_required)
+        self.assertTrue(any("license" in blocker for blocker in candidate.hard_blockers))
+
+    def test_high_health_unrelated_utility_does_not_crowd_relevant_lead(self):
+        candidates = [
+            Candidate(
+                source="github",
+                name="authlib/jose",
+                url="https://github.com/authlib/jose",
+                repository_url="https://github.com/authlib/jose",
+                description="A polished general purpose JOSE utility",
+                license="MIT",
+                updated_at="2026-07-29T00:00:00Z",
+                stars=1_000_000,
+                forks=20_000,
+                watchers=5_000,
+                contributors=500,
+                dependency_count=0,
+                security_policy=True,
+                vulnerabilities_checked=True,
+                test_signals=["tests"],
+                portability_signals=["cross-platform"],
+                reuse_signals=["docs", "examples", "package"],
+                source_rank=1,
+            ),
+            Candidate(
+                source="github",
+                name="owner/robots-package-discovery",
+                url="https://github.com/owner/robots-package-discovery",
+                repository_url="https://github.com/owner/robots-package-discovery",
+                description="robots-aware package discovery CLI",
+                license="MIT",
+                source_rank=20,
+            ),
+        ]
+
+        ranked = rank_candidates(
+            "Build a robots-aware package discovery CLI for Windows that runs locally with no cloud services",
+            candidates,
+            now=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual("owner/robots-package-discovery", ranked[0].name)
+        self.assertIsNotNone(ranked[0].score)
+        self.assertIsNotNone(ranked[1].score)
+        assert ranked[0].score is not None
+        assert ranked[1].score is not None
+        self.assertGreaterEqual(ranked[0].score.components["feature_match"], 8)
+        self.assertLess(ranked[1].score.components["feature_match"], 8)
+
+    def test_unknown_evidence_reduces_decision_score_without_inflating_raw_total(self):
+        candidate = Candidate(
+            source="github",
+            name="owner/robots-discovery",
+            url="https://github.com/owner/robots-discovery",
+            repository_url="https://github.com/owner/robots-discovery",
+            description="robots package discovery",
+            license="MIT",
+            dependency_count=None,
+        )
+
+        score = score_candidate("robots package discovery", candidate)
+
+        self.assertEqual(5.0, score.components["dependency_weight"])
+        self.assertEqual(round(max(0.0, score.total - score.unknown_cost), 2), score.decision_score)
+        self.assertLess(score.decision_score, score.total)
+
+    def test_rank_key_prefers_ready_then_inspected_and_caps_same_source_rank(self):
+        def tied(name: str, *, status: str, inspected: bool, source_rank: int) -> Candidate:
+            candidate = Candidate(
+                source="github",
+                name=name,
+                url=f"https://github.com/{name}",
+                source_rank=source_rank,
+                recommendation="selective-reuse",
+                recommendation_status=status,
+                score=ScoreBreakdown(
+                    total=70.0,
+                    components={"feature_match": 12.0},
+                    evidence={},
+                    coverage=0.8,
+                    unknown_cost=4.0,
+                    decision_score=66.0,
+                ),
+            )
+            if inspected:
+                candidate.inspection = InspectionResult(
+                    repository_url=candidate.url,
+                    status="inspected",
+                )
+            return candidate
+
+        ready = tied("owner/ready", status="ready", inspected=True, source_rank=500)
+        inspected = tied("owner/inspected", status="provisional", inspected=True, source_rank=500)
+        provisional = tied("owner/provisional", status="provisional", inspected=False, source_rank=1)
+        self.assertLess(candidate_rank_key(ready), candidate_rank_key(inspected))
+        self.assertLess(candidate_rank_key(inspected), candidate_rank_key(provisional))
+
+        capped_a = tied("owner/a", status="provisional", inspected=False, source_rank=21)
+        capped_b = tied("owner/b", status="provisional", inspected=False, source_rank=10_000)
+        self.assertEqual(candidate_rank_key(capped_a)[:-2], candidate_rank_key(capped_b)[:-2])
+
+    def test_requested_constraints_remain_visible_until_verified(self):
+        candidate = Candidate(
+            source="github",
+            name="owner/robots-discovery",
+            url="https://github.com/owner/robots-discovery",
+            repository_url="https://github.com/owner/robots-discovery",
+            description="robots package discovery",
+            license="MIT",
+            vulnerabilities_checked=True,
+            inspection=InspectionResult(
+                repository_url="https://github.com/owner/robots-discovery",
+                status="inspected",
+                test_receipt=TestReceipt(status="passed"),
+            ),
+        )
+
+        score_candidate(
+            "Build robots package discovery for Windows, local operation, and no cloud services",
+            candidate,
+        )
+
+        combined_checks = "\n".join(
+            candidate.constraint_checks + candidate.required_checks
+        ).casefold()
+        self.assertIn("windows", combined_checks)
+        self.assertIn("local", combined_checks)
+        self.assertIn("cloud", combined_checks)
+        self.assertEqual(len(candidate.required_checks), len(set(candidate.required_checks)))
 
 
 if __name__ == "__main__":

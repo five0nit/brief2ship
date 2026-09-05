@@ -150,6 +150,8 @@ class CliTests(unittest.TestCase):
             sources=[SourceReceipt("github", "ok", 1, 1)],
             overall_recommendation=candidate.recommendation,
             recommendation_reason="test",
+            decision_status="provisional",
+            discovery_status="complete",
         )
         with tempfile.TemporaryDirectory() as temporary, patch(
             "brief2ship.cli.discover_candidates", return_value=result
@@ -186,6 +188,8 @@ class CliTests(unittest.TestCase):
                 sources=[SourceReceipt("local", "ok", 1, 1)],
                 overall_recommendation="selective-reuse",
                 recommendation_reason="test",
+                decision_status="provisional",
+                discovery_status="complete",
             )
 
         with tempfile.TemporaryDirectory() as temporary, patch(

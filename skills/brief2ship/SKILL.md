@@ -1,7 +1,7 @@
 ---
 name: brief2ship
 description: "Use when repo/package/local-workspace search, a new build, report/document, or public-web research is needed. Brief2Ship is the sole repo-search skill: discover and score bases, choose a disposition, apply maintainability/design/scraping gates, implement, verify, and retain proof."
-version: 0.6.2
+version: 0.7.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -103,6 +103,15 @@ printf 'Brief2Ship preflight receipt: %s\n' "$PREFLIGHT_DIR"
 ```
 
 Keep limits bounded. Preserve the exact receipt path, source failures, warnings, and unknown evidence.
+
+For CLI v0.7+, inspect `decision_status` and `discovery_status` before acting.
+Exit `5` means receipts were written but the decision is `inconclusive`; it is
+not an operational error and never permission to build clean. Repair failed
+sources or refine a bounded search/inspection scope. Exit `0` may still mean
+provisional reuse with required checks outstanding. `--summary` optionally emits
+compact JSON; full v2 receipts retain `evaluated_candidates` and all inspection
+allocations regardless of the display-only `--limit`. Rank leads using relevance
+and confidence-adjusted `decision_score`, not raw popularity or total alone.
 
 #### Discovery sources
 
