@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 
 from .discovery_licenses import is_permissive_license, normalize_license, license_body_match
-from .discovery_models import Candidate, ScoreBreakdown
+from .discovery_models import Candidate, RequirementCheck, ScoreBreakdown
 from .discovery_query import plan_query
 
 _COMPONENT_MAX = {
@@ -102,12 +102,96 @@ def _feature_score(query: str, candidate: Candidate) -> tuple[float, list[str]]:
     ]
 
 
-def _record_constraint_checks(candidate: Candidate, constraints: tuple[str, ...]) -> None:
-    """Keep requested constraints explicit until a later gate verifies them."""
+_PLATFORMS = {"android", "ios", "linux", "macos", "windows"}
+_RUNTIMES = {
+    ".net", "c#", "c++", "deno", "go", "java", "javascript", "kotlin",
+    "node", "php", "python", "ruby", "rust", "swift", "typescript",
+}
+_REQUIREMENT_ALIASES = {"golang": "go", "node.js": "node"}
 
-    candidate.constraint_checks = [
-        f"requested constraint unverified: {constraint}"
+
+def _requirement_signals(candidate: Candidate) -> list[tuple[str, str]]:
+    """Read explicit declarations; mere language/platform mentions prove nothing.
+
+    Repository README evidence is deliberately excluded for registry candidates:
+    a shared repository is not proof that a particular package supports a target.
+    """
+    signals = [
+        (value.strip().lower().replace(" ", "-"), f"{field_name}: {value}")
+        for field_name in ("portability_signals", "reuse_signals", "topics")
+        for value in getattr(candidate, field_name)
+    ]
+    # Only a leading artifact declaration counts. "Android launcher with
+    # Windows-only examples" and "not Windows-only" do not restrict the artifact.
+    for match in re.finditer(r"(?i)^\s*(?:an?\s+)?([a-z.+#]+)[ -]only\b", candidate.description):
+        target = _REQUIREMENT_ALIASES.get(match.group(1).lower(), match.group(1).lower())
+        if target in _PLATFORMS | _RUNTIMES:
+            signals.append((f"{target}-only", f"description declaration: {match.group(0)}"))
+    return signals
+
+
+def _check_requirement(candidate: Candidate, requirement: str) -> RequirementCheck:
+    normalized = requirement.lower().strip()
+    target = _REQUIREMENT_ALIASES.get(normalized, normalized)
+    signals = _requirement_signals(candidate)
+    positive: list[str] = []
+    negative: list[str] = []
+    family = _PLATFORMS if target in _PLATFORMS else _RUNTIMES if target in _RUNTIMES else set()
+    if family:
+        for signal, evidence in signals:
+            if signal in {f"{target}-only", f"supports-{target}", f"{target}-supported"}:
+                positive.append(evidence)
+            if signal in {f"no-{target}", f"unsupported-{target}", f"{target}-unsupported"}:
+                negative.append(evidence)
+            exclusive = signal.removesuffix("-only") if signal.endswith("-only") else ""
+            exclusive = _REQUIREMENT_ALIASES.get(exclusive, exclusive)
+            if exclusive in family and exclusive != target:
+                negative.append(evidence)
+        ecosystem_runtime = {"pypi": "python", "npm": "javascript", "crates": "rust"}
+        if ecosystem_runtime.get(candidate.source) == target:
+            positive.append(f"package ecosystem: {candidate.source} ({target}); version compatibility unverified")
+    else:
+        # Version ranges and compound requirements stay unknown. A matching
+        # language or a host test pass cannot establish their compatibility.
+        resource_signals = {
+            "offline": ({"offline", "offline-capable"}, {"network-required", "internet-required", "cloud-required"}),
+            "no network": ({"offline", "offline-capable"}, {"network-required", "internet-required", "cloud-required"}),
+            "no internet": ({"offline", "offline-capable"}, {"network-required", "internet-required", "cloud-required"}),
+            "no-cloud": ({"no-cloud", "cloud-free", "offline"}, {"cloud-required"}),
+            "cloud-free": ({"no-cloud", "cloud-free", "offline"}, {"cloud-required"}),
+        }
+        normalized_resource = re.sub(r"^(?:without|no) cloud(?: services?)?$", "no-cloud", normalized)
+        normalized_resource = re.sub(r"^without (network|internet)(?: access)?$", r"no \1", normalized_resource)
+        if normalized_resource in resource_signals:
+            supported, unsupported = resource_signals[normalized_resource]
+            for signal, evidence in signals:
+                if signal in supported:
+                    positive.append(evidence)
+                if signal in unsupported:
+                    negative.append(evidence)
+        if normalized in {"dependency-free", "zero-dependency", "no-dependency", "no dependencies", "without dependencies"}:
+            if candidate.dependency_count is not None and candidate.dependency_count > 0:
+                negative.append(f"declared dependency count: {candidate.dependency_count}")
+            # Zero declared dependencies do not establish the absence of optional,
+            # system, or dynamically loaded dependencies.
+    if positive and negative:
+        return RequirementCheck(requirement, "unknown", ["conflicting declarations require review", *positive, *negative])
+    if negative:
+        return RequirementCheck(requirement, "fail", negative)
+    if positive:
+        return RequirementCheck(requirement, "pass", positive)
+    return RequirementCheck(requirement, "unknown", ["no scoped declaration verifies this requirement"])
+
+
+def _record_constraint_checks(candidate: Candidate, constraints: tuple[str, ...]) -> None:
+    candidate.requirement_checks = [
+        _check_requirement(candidate, constraint)
         for constraint in dict.fromkeys(constraints)
+    ]
+    candidate.constraint_checks = [
+        f"requested constraint {'unverified' if check.status == 'unknown' else check.status}: "
+        f"{check.requirement}; {'; '.join(check.evidence)}"
+        for check in candidate.requirement_checks
     ]
 
 
@@ -319,6 +403,8 @@ def recommend(candidate: Candidate) -> str:
         candidate.normalized_license
     )
     receipt = candidate.inspection.test_receipt if candidate.inspection else None
+    if any(check.status == "fail" for check in candidate.requirement_checks):
+        return "reject"
     if receipt and receipt.status in {"failed", "timeout", "oom", "signaled", "zero_tests"}:
         return "reject"
     if candidate.archived:
@@ -328,7 +414,7 @@ def recommend(candidate: Candidate) -> str:
     if license_missing or license_incompatible or candidate.vulnerabilities or security < 6:
         return "reject"
     if total < 45:
-        return "build-clean"
+        return "inconclusive"
     if (
         candidate.source in {"pypi", "npm", "crates"}
         and candidate.vulnerabilities_checked
@@ -342,7 +428,7 @@ def recommend(candidate: Candidate) -> str:
         return "selective-reuse"
     if total >= 50 and feature >= 8:
         return "selective-reuse"
-    return "build-clean"
+    return "inconclusive"
 
 
 def _score_coverage(candidate: Candidate) -> dict[str, float]:
@@ -386,6 +472,10 @@ def _score_coverage(candidate: Candidate) -> dict[str, float]:
 def _recommendation_receipt(candidate: Candidate) -> None:
     blockers: list[str] = []
     checks: list[str] = []
+    blockers.extend(
+        f"requirement failed: {check.requirement}; {'; '.join(check.evidence)}"
+        for check in candidate.requirement_checks if check.status == "fail"
+    )
     if candidate.license_review_required:
         checks.append("complete MIT body recognized; review free-form copyright and surrounding text before reuse")
     if candidate.inspection and candidate.source in {"pypi", "npm", "crates", "huggingface"}:
@@ -414,7 +504,15 @@ def _recommendation_receipt(candidate: Candidate) -> None:
         checks.append("exact package-version OSV evidence unavailable")
     if not receipt or receipt.status != "passed":
         checks.append("authorized sandbox test pass unavailable")
-    checks.extend(candidate.constraint_checks)
+    checks.extend(
+        text for check, text in zip(candidate.requirement_checks, candidate.constraint_checks)
+        if check.status == "unknown"
+    )
+    checks.extend(
+        f"target-environment verification unavailable for requested constraint: {check.requirement}; "
+        "passing requirement check records scoped declarations only"
+        for check in candidate.requirement_checks if check.status == "pass"
+    )
     candidate.hard_blockers = blockers
     candidate.required_checks = list(dict.fromkeys(checks))
     if blockers:

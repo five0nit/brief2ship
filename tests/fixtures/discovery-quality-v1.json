@@ -2,6 +2,66 @@
   "schema": "brief2ship-quality-fixtures-v1",
   "provenance": "Synthetic regression scenarios, agent-authored; not live provider data or a human-reviewed accuracy benchmark. Candidate names and evidence are fictional.",
   "clock": "2026-09-01T00:00:00+00:00",
+  "adversarial_cases": [
+    {
+      "id": "android-close-platform-competitor",
+      "query": "Android launcher",
+      "expected_top": "fixture/orbit",
+      "expected_selected": "fixture/orbit",
+      "expected_status": "provisional",
+      "expected_blocked": ["fixture/android-launcher"],
+      "candidates": [
+        {"name": "fixture/android-launcher", "description": "Windows-only desktop launcher"},
+        {"name": "fixture/orbit", "description": "Android launcher application", "portability_signals": ["supports-android"]}
+      ]
+    },
+    {
+      "id": "runtime-close-competitor",
+      "query": "web scraper using Python",
+      "expected_top": "fixture/arachnid",
+      "expected_selected": "fixture/arachnid",
+      "expected_status": "provisional",
+      "expected_blocked": ["fixture/web-scraper"],
+      "candidates": [
+        {"name": "fixture/web-scraper", "description": "Java-only web scraper"},
+        {"name": "fixture/arachnid", "description": "web scraper library", "portability_signals": ["supports-python"]}
+      ]
+    },
+    {
+      "id": "synonym-miss-requires-abstention",
+      "query": "android launcher",
+      "expected_selected": null,
+      "expected_status": "inconclusive",
+      "expected_blocked": [],
+      "candidates": [
+        {"name": "fixture/mobilehome", "description": "Android home screen application", "portability_signals": ["supports-android"]}
+      ]
+    },
+    {
+      "id": "offline-cloud-competitor",
+      "query": "offline speech recognition",
+      "expected_top": "fixture/echo",
+      "expected_selected": "fixture/echo",
+      "expected_status": "provisional",
+      "expected_blocked": ["fixture/speech-recognition"],
+      "candidates": [
+        {"name": "fixture/speech-recognition", "description": "speech recognition library", "reuse_signals": ["cloud-required"]},
+        {"name": "fixture/echo", "description": "speech recognition toolkit", "reuse_signals": ["offline"]}
+      ]
+    },
+    {
+      "id": "version-compatibility-remains-unverified",
+      "query": "web scraper using Python 3.11",
+      "expected_top": "fixture/arachnid",
+      "expected_selected": "fixture/arachnid",
+      "expected_status": "provisional",
+      "expected_blocked": [],
+      "expected_unknown": ["Python 3.11"],
+      "candidates": [
+        {"name": "fixture/arachnid", "description": "web scraper library", "portability_signals": ["supports-python"]}
+      ]
+    }
+  ],
   "cases": [
     {
       "id": "web-scraper-short",

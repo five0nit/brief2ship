@@ -110,6 +110,7 @@ _RUNTIME_TERMS = {
     "typescript",
     "windows",
 }
+_PLATFORM_TERMS = {"android", "ios", "linux", "macos", "windows"}
 _NEGATED_RESOURCES = {
     "authentication",
     "cloud",
@@ -153,6 +154,17 @@ def _constraint_ranges(tokens: list[str]) -> list[tuple[int, int]]:
     while index < len(tokens):
         lowered = tokens[index].lower()
         next_lower = tokens[index + 1].lower() if index + 1 < len(tokens) else ""
+        # "Java parser" and "parser for Java" describe a domain, not an
+        # implementation runtime. "for" alone is insufficient evidence;
+        # retain implementation cues such as "using" and "written in".
+        language_domain = (
+            lowered in _RUNTIME_TERMS - _PLATFORM_TERMS
+            and len(tokens) > 1
+            and (index == 0 or tokens[index - 1].lower() not in {"using", "in", "on", "with"})
+        )
+        if language_domain:
+            index += 1
+            continue
 
         if lowered in _RUNTIME_TERMS and _VERSION_RE.fullmatch(next_lower):
             ranges.append((index, index + 2))
@@ -175,19 +187,59 @@ def _constraint_ranges(tokens: list[str]) -> list[tuple[int, int]]:
         if _is_constraint_term(tokens[index]):
             ranges.append((index, index + 1))
         index += 1
+    # The flat requirement list is conjunctive. Without a Boolean grammar,
+    # disjunction scope (including an unrecognized alternative) is unknown.
+    # Retain the full compound for review instead of rejecting a valid branch
+    # or silently dropping the requirement. Scoring leaves compounds unknown.
+    covered = {index for start, end in ranges for index in range(start, end)}
+    uncertain_scope = {
+        "or", "and/or", "not", "never", "optional", "optionally", "prefer",
+        "preferred", "preferably", "ideally", "would", "could", "may", "might",
+        "unless", "except", "excluding", "exclude", "avoid",
+    }
+    # Supported resource negations (e.g. "without cloud") remain atomic.
+    # Other negation/modality scopes need a grammar, not mandatory-token guesses.
+    if ranges and any(
+        token.lower() in uncertain_scope
+        or (token.lower() in {"no", "without"} and index not in covered)
+        for index, token in enumerate(tokens)
+    ):
+        return [(0, len(tokens))]
     return ranges
 
 
 def _core_tokens(tokens: list[str], ranges: list[tuple[int, int]]) -> list[str]:
+    # Runtime/platform names can be the domain itself (Android launcher, Java
+    # parser, Python package manager). Retain these domain terms. A standalone
+    # trailing qualifier such as "for Windows" is recorded as a requirement;
+    # the original request still remains one of the retrieval variants.
+    introducers = {"for", "with", "on", "in", "using", "that", "runs", "run", "and", "or", "must", "be"}
+    def removable_range(start: int, end: int) -> bool:
+        has_runtime = any(
+            part.lower() in _RUNTIME_TERMS
+            for token in tokens[start:end]
+            for part in token.split("/")
+        )
+        if not has_runtime:
+            return True
+        return (
+            start > 0 and tokens[start - 1].lower() in introducers
+            and (end == len(tokens) or tokens[end].lower() in introducers)
+        )
+
+    removable = [
+        (start, end)
+        for start, end in ranges
+        if removable_range(start, end)
+    ]
     constrained = {
         index
-        for start, end in ranges
+        for start, end in removable
         for index in range(start, end)
     }
     # Remove only connectors introducing a recognized constraint, not the
     # connectors inside a task such as "PDF to Markdown" or "audio and video".
-    introducers = {"for", "with", "on", "in", "using", "that", "runs", "run", "and", "or", "must", "be"}
-    for start, _ in ranges:
+    for start, _ in removable:
         previous = start - 1
         while previous >= 0 and tokens[previous].lower() in introducers:
             constrained.add(previous)

@@ -167,9 +167,9 @@ checks = {
         "crawl stayed same-origin",
     ],
     "skills/brief2ship/SKILL.md": [
-        "sole repo-search skill",
+        "Decision contract",
         "--local",
-        "agent-code entropy gate",
+        "Handoff and build receipt",
         "exact repository/base",
         "The 4 lanes",
         "Report / Document",

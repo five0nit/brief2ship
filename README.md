@@ -14,6 +14,23 @@ Brief2Ship is a dependency-free Python CLI and portable Agent Skill for **repo-f
 
 *Historical v0.6.2 dogfood receipt (not a v0.7.0 result): `local/brief2ship`, 70.50/100, inspected, `selective-reuse`. [Read the source transcript](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/assets/demo-transcript.txt) or [see more decision cases](https://github.com/five0nit/brief2ship/blob/v0.6.2/docs/case-studies.md).*
 
+## v0.8.0 (unreleased)
+
+This checkout includes requirement-aware decisions, stronger package retrieval,
+inspection failure isolation, retry checkpoints and a simpler first run.
+Install this update from the repository checkout or extracted source directory:
+
+```text
+uv tool install .
+brief2ship discover "Python retry library with exponential backoff" --sources github,pypi --text
+```
+
+The CLI creates an output directory and performs up to two static inspections.
+Use `--summary` for JSON, or `--progress` to report progress on stderr.
+See [the update and migration guide](docs/update-0.8.0.md) for retry behavior,
+compatibility changes, limitations and validation. The versioned installation
+commands below install the previous published GitHub release, v0.7.0.
+
 ## v0.7.0 — reliable reuse decisions
 
 This release adds reliable reuse decisions: explicit `inconclusive` outcomes,

@@ -23,6 +23,29 @@ _PYPI_SIMPLE = "https://pypi.org/simple/"
 _OSV_API = "https://api.osv.dev/v1/query"
 _NAME_STOPWORDS = {"a", "an", "and", "for", "of", "or", "the", "to", "with"}
 
+# These are discovery leads, not endorsements or inferred package evidence.
+# A hint must occur in the observed Simple index and its JSON must be fetched.
+_PYPI_PACKAGE_HINTS = (
+    ("web scraping", ({"web", "html"}, {"scraper", "scraping", "crawler", "crawling", "extraction"}),
+     ("scrapy", "beautifulsoup4", "trafilatura")),
+    ("command-line arguments", ({"command", "cli"}, {"line", "parser", "parsing", "arguments"}),
+     ("click", "typer", "docopt")),
+    ("HTTP clients", ({"http", "https"}, {"client", "clients", "requests"}),
+     ("httpx", "requests", "aiohttp")),
+    ("PDF extraction", ({"pdf"}, {"text", "extract", "extraction", "parser", "parsing"}),
+     ("pypdf", "pdfplumber", "pymupdf")),
+    ("tabular data", ({"tabular", "dataframe", "dataframes"},),
+     ("pandas", "polars")),
+)
+_PYPI_HINT_LIMIT = 6
+_PYPI_DETAIL_LIMIT = 60
+_PYPI_DESCRIPTION_CHARS = 16_384
+_PYPI_GENERIC_TERMS = {
+    "app", "apps", "application", "applications", "framework", "frameworks",
+    "library", "libraries", "module", "modules", "package", "packages",
+    "project", "projects", "solution", "solutions", "tool", "tools", "python",
+}
+
 
 def _rate_limit_remaining(headers: dict[str, str]) -> int | None:
     direct = headers.get("x-ratelimit-remaining")
@@ -287,14 +310,6 @@ def _load_pypi_names(
     return parser.names
 
 
-def _name_fit(query: str, name: str) -> tuple[int, int, str]:
-    query_tokens = _name_tokens(query)
-    name_tokens = _name_tokens(name.replace("-", " "))
-    overlap = len(query_tokens & name_tokens)
-    all_match = int(bool(query_tokens) and query_tokens <= name_tokens)
-    return all_match, overlap, name.lower()
-
-
 def _pypi_repository(info: dict[str, Any]) -> str | None:
     project_urls = info.get("project_urls") or {}
     if isinstance(project_urls, dict):
@@ -317,6 +332,160 @@ def _pypi_runtime_dependency_count(requires: object) -> int | None:
     return sum(1 for value in requires if "extra ==" not in value.lower())
 
 
+def _pypi_name_key(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _pypi_search_terms(query: str) -> set[str]:
+    terms = _name_tokens(query)
+    # Registry/runtime and artifact boilerplate must not spend the hydration
+    # budget or win metadata ranking ahead of a meaningful topic. Retain a
+    # generic-only fallback; exact identity is checked separately from tokens.
+    return terms - _PYPI_GENERIC_TERMS or terms - {"python"} or terms
+
+
+def _pypi_shortlist(
+    query: str, names: list[str], budget: int, warnings: list[str]
+) -> tuple[list[str], dict[str, str]]:
+    terms = _pypi_search_terms(query)
+    canonical_names = {_pypi_name_key(name): name for name in names}
+    exact_key = _pypi_name_key(query)
+    matches = []
+    for key, name in canonical_names.items():
+        name_terms = _name_tokens(name)
+        overlap = len(terms & name_terms)
+        exact_name = int(key == exact_key)
+        if exact_name or overlap:
+            matches.append((exact_name, int(terms <= name_terms), overlap, name))
+    ranked_names = [
+        name for _, _, _, name in sorted(
+            matches, key=lambda item: (-item[0], -item[1], -item[2], item[3].lower())
+        )
+    ]
+    hinted_names: list[str] = []
+    hint_concepts: dict[str, str] = {}
+    for concept, required_groups, hints in _PYPI_PACKAGE_HINTS:
+        if not all(terms & group for group in required_groups):
+            continue
+        observed = [canonical_names[name] for name in hints if name in canonical_names]
+        added = [name for name in observed if name not in hinted_names][:_PYPI_HINT_LIMIT - len(hinted_names)]
+        if added:
+            hinted_names.extend(added)
+            hint_concepts.update(dict.fromkeys(added, concept))
+            warnings.append(f"PyPI curated discovery hints for {concept}: {', '.join(added)}; not endorsements")
+        if len(hinted_names) >= _PYPI_HINT_LIMIT:
+            break
+    # Alternate both routes so numerous lexical matches cannot starve hints,
+    # and hints cannot replace the normal name search.
+    shortlist: list[str] = []
+    for index in range(max(len(ranked_names), len(hinted_names))):
+        for group in (ranked_names, hinted_names):
+            if index < len(group) and group[index] not in shortlist:
+                shortlist.append(group[index])
+                if len(shortlist) >= budget:
+                    return shortlist, hint_concepts
+    return shortlist, hint_concepts
+
+
+def _pypi_supporting_excerpts(value: str, terms: set[str]) -> list[str]:
+    excerpts: list[str] = []
+    for term in sorted(terms)[:3]:
+        match = re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", value, re.IGNORECASE)
+        if match:
+            excerpt = value[max(0, match.start() - 100):match.start() + 140]
+            if excerpt not in excerpts:
+                excerpts.append(excerpt)
+    return excerpts
+
+
+def _pypi_metadata_fit(
+    query: str, name: str, info: dict[str, Any]
+) -> tuple[tuple[int, int, int], dict[str, Any]]:
+    terms = _pypi_search_terms(query)
+    name_terms = _name_tokens(name)
+    keywords = info.get("keywords") or ""
+    if isinstance(keywords, list):
+        keywords = " ".join(str(value) for value in keywords)
+    summary = str(info.get("summary") or "")
+    keywords = str(keywords)
+    summary_terms = _name_tokens(summary)
+    keyword_terms = _name_tokens(keywords)
+    short_terms = summary_terms | keyword_terms
+    description = str(info.get("description") or "")[:_PYPI_DESCRIPTION_CHARS]
+    description_terms = _name_tokens(description)
+    exact_name = int(_pypi_name_key(query) == _pypi_name_key(name))
+    coverage = len(terms & (name_terms | short_terms | description_terms))
+    weighted = 3 * len(terms & name_terms) + 2 * len(terms & short_terms) + len(terms & description_terms)
+    evidence = {
+        "query_terms": sorted(terms),
+        "ignored_query_terms": sorted(_name_tokens(query) - terms),
+        "matched_terms": {
+            "name": sorted(terms & name_terms),
+            "summary": sorted(terms & summary_terms),
+            "keywords": sorted(terms & keyword_terms),
+            "description": sorted(terms & description_terms),
+        },
+        "rank_basis": {
+            "exact_name": exact_name,
+            "term_coverage": coverage,
+            "weighted_matches": weighted,
+            "weights": {"name": 3, "summary_or_keywords": 2, "description": 1},
+        },
+        "description_characters_considered": len(description),
+        "supporting_excerpts": {
+            "summary": _pypi_supporting_excerpts(summary, terms & summary_terms),
+            "keywords": _pypi_supporting_excerpts(keywords, terms & keyword_terms),
+            "description": _pypi_supporting_excerpts(description, terms & description_terms),
+        },
+    }
+    return (exact_name, coverage, weighted), evidence
+
+
+def _pypi_preserve_hint_route(
+    ranked: list[Candidate], limit: int, warnings: list[str]
+) -> list[Candidate]:
+    candidates = ranked[:limit]
+    if limit < 2:
+        return candidates
+    for candidate in ranked:
+        evidence = candidate.retrieval_evidence
+        routes = evidence["routes"]
+        if "package-name-match" in routes or not any(route.startswith("curated-hint:") for route in routes):
+            continue
+        fields = evidence["matched_terms"]
+        metadata_terms = set(fields["summary"]) | set(fields["keywords"]) | set(fields["description"])
+        minimum = min(2, len(evidence["query_terms"]))
+        if len(metadata_terms) < max(1, minimum):
+            continue
+        # The highest-ranked eligible alternative gets one slot, but an exact
+        # package-name request remains protected regardless of hint relevance.
+        if candidate not in candidates:
+            replacement = next(
+                (index for index in reversed(range(len(candidates)))
+                 if not candidates[index].retrieval_evidence["rank_basis"]["exact_name"]),
+                None,
+            )
+            if replacement is None:
+                return candidates
+            displaced = candidates[replacement].name
+            candidates[replacement] = candidate
+            evidence["pool_selection"] = {
+                "policy": "reserve-one-metadata-relevant-non-name-hint",
+                "reason": "preserve a second retrieval route in the bounded comparison pool",
+                "metadata_matching_terms": sorted(metadata_terms),
+                "minimum_metadata_matches": max(1, minimum),
+                "replaced_candidate": displaced,
+                "exact_package_name_matches_protected": True,
+            }
+            warnings.append(
+                f"PyPI comparison diversity reserved one slot for {candidate.name} over {displaced}: "
+                f"observed metadata matches {', '.join(sorted(metadata_terms))}; "
+                "this preserves a non-name hint route, not a reuse endorsement."
+            )
+        break
+    return candidates
+
+
 def search_pypi(
     query: str,
     limit: int,
@@ -335,20 +504,23 @@ def search_pypi(
     )
     try:
         names = _load_pypi_names(client, cache_dir, refresh, receipt.warnings)
-        matched_names: list[tuple[tuple[int, int, str], str]] = []
-        for name in names:
-            fit = _name_fit(search_query, name)
-            if fit[1] > 0:
-                matched_names.append((fit, name))
-        ranked_names = [
-            name
-            for _, name in sorted(
-                matched_names,
-                key=lambda item: (-item[0][0], -item[0][1], item[0][2]),
+        budget = min(_PYPI_DETAIL_LIMIT, max(limit * 3, 3))
+        ranked_names, hint_concepts = _pypi_shortlist(search_query, names, budget, receipt.warnings)
+        ignored_terms = _name_tokens(search_query) - _pypi_search_terms(search_query)
+        if ignored_terms:
+            receipt.warnings.append(
+                f"PyPI topic matching ignores generic query terms: {', '.join(sorted(ignored_terms))}; "
+                "exact package-name identity remains protected."
             )
-        ]
-        candidates: list[Candidate] = []
-        for name in ranked_names[: max(limit * 3, limit)]:
+        receipt.warnings.append(
+            f"PyPI retrieval uses observed package-name matches plus at most {_PYPI_HINT_LIMIT} curated hints; "
+            f"hydrating {len(ranked_names)} name(s), capped at {budget} JSON requests. "
+            "Ranks use observed names, summaries, keywords and the first "
+            f"{_PYPI_DESCRIPTION_CHARS} description characters; this is not full-text index search or exhaustive coverage. "
+            "Limits of at least two preserve one metadata-relevant non-name hint when available, without displacing exact package names."
+        )
+        ranked_candidates: list[tuple[tuple[int, int, int], Candidate]] = []
+        for name in ranked_names:
             endpoint = f"https://pypi.org/pypi/{quote(name, safe='')}/json"
             receipt.endpoints.append(endpoint)
             try:
@@ -360,6 +532,10 @@ def search_pypi(
                 _record_partial(receipt, f"{name}: package detail had no info object")
                 continue
             info = data["info"]
+            observed_name = info.get("name")
+            if not isinstance(observed_name, str) or _pypi_name_key(observed_name) != _pypi_name_key(name):
+                _record_partial(receipt, f"{name}: package detail identity was missing or mismatched")
+                continue
             requires = info.get("requires_dist")
             if requires is not None and (
                 not isinstance(requires, list)
@@ -375,36 +551,61 @@ def search_pypi(
                 files = releases.get(version) or []
                 if files and isinstance(files[0], dict):
                     upload_time = files[0].get("upload_time_iso_8601")
-            candidates.append(
-                Candidate(
-                    source="pypi",
-                    name=str(info.get("name") or name),
-                    url=str(
-                        info.get("package_url")
-                        or f"https://pypi.org/project/{name}/"
-                    ),
-                    repository_url=_pypi_repository(info),
-                    description=str(info.get("summary") or ""),
-                    version=version,
-                    license=str(
-                        info.get("license_expression") or info.get("license") or ""
-                    )
-                    or None,
-                    updated_at=upload_time,
-                    published_at=upload_time,
-                    language="Python",
-                    topics=(
-                        [str(value) for value in info.get("keywords") or []]
-                        if isinstance(info.get("keywords"), list)
-                        else str(info.get("keywords") or "").split()
-                    ),
-                    dependency_count=_pypi_runtime_dependency_count(requires),
-                    reuse_signals=["package metadata", "installable package"],
-                    source_rank=len(candidates) + 1,
-                )
+            candidate = Candidate(
+                source="pypi",
+                name=observed_name,
+                url=str(info.get("package_url") or f"https://pypi.org/project/{name}/"),
+                repository_url=_pypi_repository(info),
+                description=str(info.get("summary") or ""),
+                version=version,
+                license=str(info.get("license_expression") or info.get("license") or "") or None,
+                updated_at=upload_time,
+                published_at=upload_time,
+                language="Python",
+                topics=(
+                    [str(value) for value in info.get("keywords") or []]
+                    if isinstance(info.get("keywords"), list)
+                    else str(info.get("keywords") or "").split()
+                ),
+                dependency_count=_pypi_runtime_dependency_count(requires),
+                reuse_signals=["package metadata", "installable package"],
             )
-            if len(candidates) >= limit:
-                break
+            fit, evidence = _pypi_metadata_fit(search_query, name, info)
+            routes = []
+            if evidence["rank_basis"]["exact_name"] or evidence["matched_terms"]["name"]:
+                routes.append("package-name-match")
+            if name in hint_concepts:
+                routes.append(f"curated-hint:{hint_concepts[name]}")
+            # A curated lead alone is not candidate evidence. Apply eligibility
+            # before slicing the ranked pool, including when slots are empty.
+            if "package-name-match" not in routes and not any(
+                evidence["matched_terms"][field] for field in ("summary", "keywords", "description")
+            ):
+                receipt.warnings.append(
+                    f"PyPI filtered {name}: curated hint had no observed matching terms "
+                    "in its summary, keywords or bounded description."
+                )
+                continue
+            candidate.retrieval_evidence = {
+                "method": "bounded-name-index-and-curated-hints",
+                "routes": routes,
+                "query": search_query,
+                "metadata_url": endpoint,
+                "hydration_budget": budget,
+                "hydration_shortlist_count": len(ranked_names),
+                **evidence,
+            }
+            ranked_candidates.append((fit, candidate))
+        ranked = [
+            candidate
+            for _, candidate in sorted(
+                ranked_candidates,
+                key=lambda item: (-item[0][0], -item[0][1], -item[0][2], item[1].name.lower()),
+            )
+        ]
+        candidates = _pypi_preserve_hint_route(ranked, limit, receipt.warnings)
+        for source_rank, candidate in enumerate(candidates, start=1):
+            candidate.source_rank = source_rank
         receipt.returned = len(candidates)
         return candidates, receipt
     except DiscoverySourceError as exc:

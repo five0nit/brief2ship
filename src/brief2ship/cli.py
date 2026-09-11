@@ -8,13 +8,14 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from . import __version__
 from .crawl import crawl_site
 from .discovery import discover as discover_candidates
 from .discovery_models import DiscoveryConfig
-from .discovery_render import render_discovery_summary, write_discovery
+from .discovery_render import render_discovery_summary, render_discovery_text, write_discovery
 from .errors import Brief2ShipError, OutputError, PolicyError
 from .models import ScrapeConfig
 from .render import atomic_write, render_result, write_crawl
@@ -117,8 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="search, inspect, score, and recommend existing code before building",
     )
     discover.add_argument("query")
-    discover.add_argument("--output", type=Path, required=True)
-    discover.add_argument("--summary", action="store_true", help="print a concise JSON decision and source-health summary instead of only the receipt path")
+    discover.add_argument("--output", type=Path, help="new or empty receipt directory; defaults to a new system temporary directory")
+    presentation = discover.add_mutually_exclusive_group()
+    presentation.add_argument("--summary", action="store_true", help="print a concise JSON decision and source-health summary")
+    presentation.add_argument("--text", action="store_true", help="print the decision, required checks and next action")
+    discover.add_argument("--resume", type=Path, help="retry a prior checkpoint directory/file, reusing successful public source observations up to 24 hours old")
+    discover.add_argument("--progress", action="store_true", help="show search and inspection progress on stderr (automatic in interactive terminals)")
     discover.add_argument(
         "--sources",
         type=_sources,
@@ -135,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="search a bounded local workspace; repeatable and automatically enables source=local",
     )
-    discover.add_argument("--inspect-top", type=_bounded_int(0, 5), default=0)
+    discover.add_argument("--inspect-top", type=_bounded_int(0, 5), default=2, help="maximum static inspections (default: 2); use 0 for search-only")
     discover.add_argument("--test-top", type=_bounded_int(0, 3), default=0)
     discover.add_argument("--timeout", type=_bounded_float(1, 30), default=20.0)
     discover.add_argument(
@@ -230,10 +235,19 @@ def _run_discover(args: argparse.Namespace) -> int:
         refresh_cache=args.refresh_cache,
         github_token=os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"),
     )
-    result = discover_candidates(args.query, config, output_dir=args.output)
-    receipt = write_discovery(result, args.output.expanduser().resolve())
+    config.validate()
+    output_dir = args.output or Path(tempfile.mkdtemp(prefix="brief2ship-discovery-"))
+    options = {}
+    if args.resume:
+        options["resume_from"] = args.resume
+    if args.progress or sys.stderr.isatty():
+        options["progress"] = lambda message: print(f"brief2ship: {message}", file=sys.stderr, flush=True)
+    result = discover_candidates(args.query, config, output_dir=output_dir, **options)
+    receipt = write_discovery(result, output_dir.expanduser().resolve())
     if args.summary:
-        sys.stdout.write(render_discovery_summary(result, args.output.expanduser().resolve()))
+        sys.stdout.write(render_discovery_summary(result, output_dir.expanduser().resolve()))
+    elif args.text or args.output is None:
+        sys.stdout.write(render_discovery_text(result, output_dir.expanduser().resolve()))
     else:
         sys.stdout.write(f"{receipt}\n")
     return 5 if result.decision_status == "inconclusive" or result.discovery_status != "complete" else 0

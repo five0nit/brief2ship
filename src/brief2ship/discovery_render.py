@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict
 from pathlib import Path
 
 from .discovery_models import Candidate, DiscoveryResult
@@ -33,17 +34,22 @@ def _all_candidates(result: DiscoveryResult) -> list[Candidate]:
     return result.evaluated_candidates or result.candidates
 
 
-def render_discovery_summary(result: DiscoveryResult, output_dir: Path) -> str:
-    """Compact JSON for operators; full receipts remain authoritative."""
+def summary_payload(result: DiscoveryResult, output_dir: Path) -> dict:
+    """Shared handoff contract for human and machine output."""
     evaluated = _all_candidates(result)
     selected = next((item for item in evaluated if item.canonical_id == result.selected_candidate_id), None) if result.selected_candidate_id else None
     top = selected or (result.candidates[0] if result.candidates else None)
     score = top.score if top else None
     payload = {
+        "schema_version": result.schema_version,
         "decision": result.overall_recommendation,
         "decision_status": result.decision_status,
         "discovery_status": result.discovery_status,
         "selected_candidate": _safe(selected.name) if selected else None,
+        "selected_candidate_id": result.selected_candidate_id,
+        "selected_version": selected.version if selected else None,
+        "selected_commit": selected.inspection.commit if selected and selected.inspection else None,
+        "source_observed_at": result.config.get("source_observed_at", {}),
         "top_candidate": _safe(top.name) if top else None,
         "score": score.total if score else None,
         "decision_score": score.decision_score if score else None,
@@ -52,6 +58,7 @@ def render_discovery_summary(result: DiscoveryResult, output_dir: Path) -> str:
         "displayed_count": len(result.candidates),
         "hard_blocker_count": sum(len(item.hard_blockers) for item in evaluated),
         "required_checks": [_safe(value) for value in top.required_checks] if top else [],
+        "requirement_checks": [asdict(value) for value in getattr(top, "requirement_checks", [])] if top else [],
         "incomplete_reasons": [_safe(value) for value in result.incomplete_reasons],
         "sources": [{
             "source": item.source, "status": item.status, "returned": item.returned,
@@ -60,7 +67,50 @@ def render_discovery_summary(result: DiscoveryResult, output_dir: Path) -> str:
         } for item in result.sources],
         "receipts": {kind: str(output_dir / f"discovery.{extension}") for kind, extension in (("markdown", "md"), ("json", "json"))},
     }
+    if result.discovery_status != "complete":
+        next_action = "Retry failed sources with --resume and the same query/source scope; review checkpoint freshness."
+    elif result.decision_status == "inconclusive":
+        next_action = "Review missing evidence, refine the query or increase --inspect-top; no build decision is authorized."
+    elif result.decision_status == "provisional":
+        next_action = "Validate the selected candidate's required checks before implementation."
+    elif result.overall_recommendation == "build-clean":
+        next_action = "Review the bounded negative evidence and record the clean-build rationale."
+    else:
+        next_action = "Use the pinned candidate and retain this receipt with implementation verification."
+    payload["next_action"] = next_action
+    return payload
+
+
+def render_discovery_summary(result: DiscoveryResult, output_dir: Path) -> str:
+    """Compact JSON for operators; full receipts remain authoritative."""
+    payload = summary_payload(result, output_dir)
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def render_discovery_text(result: DiscoveryResult, output_dir: Path) -> str:
+    payload = summary_payload(result, output_dir)
+    lines = [
+        f"Decision: {payload['decision']} ({payload['decision_status']})",
+        f"Discovery: {payload['discovery_status']}; {payload['evaluated_count']} candidates evaluated",
+        f"Selected: {payload['selected_candidate'] or 'none'}",
+    ]
+    if payload["selected_candidate_id"]:
+        lines.append(f"Identity: {_safe(payload['selected_candidate_id'])}")
+    for label, key in (("Version", "selected_version"), ("Commit", "selected_commit")):
+        if payload[key]:
+            lines.append(f"{label}: {_safe(payload[key])}")
+    for source, observed_at in sorted(payload["source_observed_at"].items()):
+        lines.append(f"Observed {_safe(source)}: {_safe(observed_at)}")
+    for check in payload["required_checks"]:
+        lines.append(f"Required check: {check}")
+    for check in payload["requirement_checks"]:
+        lines.append(f"Requirement: {_safe(check['requirement'])} ({_safe(check['status'])})")
+        for evidence in check["evidence"]:
+            lines.append(f"  Evidence: {_safe(evidence)}")
+    for reason in payload["incomplete_reasons"]:
+        lines.append(f"Incomplete: {reason}")
+    lines.extend([f"Next: {payload['next_action']}", f"Receipt: {payload['receipts']['markdown']}"])
+    return "\n".join(lines) + "\n"
 
 
 def _score(candidate: Candidate, key: str) -> str:
@@ -149,6 +199,8 @@ def render_discovery_markdown(result: DiscoveryResult) -> str:
                 f"- License: {_code(candidate.license or 'unknown')}",
                 f"- Normalized license: {_code(candidate.normalized_license or 'unknown')}",
                 f"- Requested constraint checks: {_code('; '.join(candidate.constraint_checks) or 'none')}",
+                f"- Requirement evidence: {_code(json.dumps([asdict(value) for value in candidate.requirement_checks], ensure_ascii=False))}",
+                f"- Retrieval evidence: {_code(json.dumps(candidate.retrieval_evidence, ensure_ascii=False))}",
                 f"- Activity: {_code(candidate.updated_at or candidate.published_at or 'unknown')}",
                 f"- Dependencies: {_code(candidate.dependency_count if candidate.dependency_count is not None else 'unknown')}",
                 f"- Stars / forks / watchers: {_code(' / '.join((_observed_number(candidate.stars), _observed_number(candidate.forks), _observed_number(candidate.watchers))))}",

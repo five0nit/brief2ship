@@ -330,7 +330,7 @@ class DiscoveryScoringTests(unittest.TestCase):
 
         self.assertGreaterEqual(score.components["feature_match"], 8)
 
-    def test_low_fit_candidate_uses_canonical_build_clean_disposition(self):
+    def test_low_fit_candidate_remains_inconclusive(self):
         candidate = Candidate(
             source="github",
             name="popular-but-unrelated",
@@ -348,7 +348,7 @@ class DiscoveryScoringTests(unittest.TestCase):
             now=datetime(2026, 7, 30, tzinfo=timezone.utc),
         )
 
-        self.assertEqual("build-clean", candidate.recommendation)
+        self.assertEqual("inconclusive", candidate.recommendation)
 
     def test_missing_license_rejects_even_when_total_is_low(self):
         candidate = Candidate(

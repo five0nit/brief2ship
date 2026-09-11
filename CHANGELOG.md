@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 - Unreleased
+
+- Preserve domain intent and record structured requirement evidence; low keyword overlap no longer authorizes a clean build.
+- Expand bounded PyPI retrieval using index-confirmed concept hints and observed metadata relevance.
+- Validate malformed manifests, isolate candidate inspection failures and preserve bounded source-order README evidence.
+- Save provider checkpoints and support explicit retries with freshness and scope validation.
+- Add automatic output directories, two default CLI static inspections, optional text summaries and stderr progress.
+- Preserve status, pinned identities, required checks and next actions in shared handoff output and agent instructions.
+- Add realistic synthetic mismatch/abstention regressions. Human-reviewed live-provider accuracy remains unmeasured.
+- Harden integration-review counterexamples: preserve alternative-platform uncertainty and domain-language intent, validate hydrated fields before mutation, retain unknown aggregate dependencies after incomplete inspection, validate nested Poetry declarations, filter irrelevant hints, protect exact package hydration and prioritize topic terms over generic artifact words.
+- Keep detected negated/optional target requirements and unresolved dependency includes or unsupported declarations unknown rather than authorizing false negative decisions.
+- Include pinned version/commit, original source observation times, and structured requirement results/evidence in human-readable handoffs.
+
+This source package is an unpublished update based on v0.7.0; no v0.8.0 tag or PyPI publication is claimed.
+
 ## 0.7.0 - 2026-09-05
 
 - separate discovery health, decision status, and reuse disposition; provider failures, empty retrieval and missing inspections now yield `inconclusive` with CLI exit 5, never a false clean-build recommendation
