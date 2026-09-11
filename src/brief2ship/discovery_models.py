@@ -50,6 +50,15 @@ class InspectionResult:
 
 
 @dataclass
+class RequirementCheck:
+    """Observed requirement evidence, not a claim of runtime verification."""
+
+    requirement: str
+    status: str = "unknown"
+    evidence: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Candidate:
     source: str
     name: str
@@ -101,6 +110,8 @@ class Candidate:
     license_kind: str = "metadata"
     license_body_match: str | None = None
     license_review_required: bool = False
+    requirement_checks: list[RequirementCheck] = field(default_factory=list)
+    retrieval_evidence: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

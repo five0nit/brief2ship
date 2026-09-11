@@ -118,11 +118,18 @@ class DecisionTests(unittest.TestCase):
         outcome = decide([item], [SourceReceipt("github", "ok", 1, returned=1)])
         self.assertEqual("complete", outcome.status)
 
-    def test_clean_build_requires_completed_negative_inspection(self):
+    def test_inspected_low_lexical_fit_is_not_negative_capability_evidence(self):
         result, _ = self.run_discovery([candidate("unrelated", "utility")], inspect_top=1)
+        self.assertEqual("inconclusive", result.overall_recommendation)
+        self.assertEqual("inconclusive", result.decision_status)
+        self.assertIsNone(result.selected_candidate_id)
+
+    def test_clean_build_requires_observed_negative_fact_and_complete_inspection(self):
+        archived = candidate()
+        archived.archived = True
+        result, _ = self.run_discovery([archived], inspect_top=1)
         self.assertEqual("build-clean", result.overall_recommendation)
         self.assertEqual("complete", result.decision_status)
-        self.assertIsNone(result.selected_candidate_id)
 
     def test_failed_inspection_retained_and_does_not_authorize_clean_build(self):
         with tempfile.TemporaryDirectory() as root, patch.dict(

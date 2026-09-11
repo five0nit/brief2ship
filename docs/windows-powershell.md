@@ -1,5 +1,7 @@
 # Native Windows PowerShell quickstart
 
+For the delivered 0.8.0 update, extract the ZIP and start in its `source/brief2ship` directory; skip the v0.7.0 clone below. Follow the isolated install instructions or see [the update guide](update-0.8.0.md).
+
 Use PowerShell with Python 3.11, 3.12 or 3.13 installed. Start in a fresh
 Brief2Ship v0.7.0 source checkout containing `pyproject.toml`:
 

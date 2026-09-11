@@ -7,12 +7,14 @@ from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
+from .discovery_checkpoint import load_checkpoint, write_checkpoint
 from .discovery_http import DiscoveryHttpClient
 from .discovery_decision import decide
 from .discovery_inspection import RepositoryInspector
 from .discovery_local import search_local
-from .discovery_models import Candidate, DiscoveryConfig, DiscoveryResult, SourceReceipt
+from .discovery_models import Candidate, DiscoveryConfig, DiscoveryResult, InspectionResult, SourceReceipt
 from .discovery_providers import PROVIDERS, enrich_osv, search_pypi
 from .discovery_query import plan_query
 from .discovery_scoring import rank_candidates
@@ -181,7 +183,7 @@ def deduplicate_candidates(candidates: list[Candidate]) -> list[Candidate]:
     return output
 
 
-def _inspection_priority(candidate: Candidate) -> tuple[float, float, str, str]:
+def _inspection_priority(candidate: Candidate) -> tuple[bool, float, float, str, str]:
     """Prefer direct query fit when choosing scarce inspection slots."""
     feature_match = (
         candidate.score.components.get("feature_match", 0.0)
@@ -189,7 +191,9 @@ def _inspection_priority(candidate: Candidate) -> tuple[float, float, str, str]:
         else 0.0
     )
     total = candidate.score.decision_score if candidate.score else 0.0
-    return (-feature_match, -total, candidate.source, candidate.name.lower())
+    known_mismatch = any(check.status == "fail" for check in candidate.requirement_checks)
+    observed_blocker = known_mismatch or candidate.archived or candidate.deprecated or candidate.disabled or candidate.gated or bool(candidate.vulnerabilities)
+    return (observed_blocker, -feature_match, -total, candidate.source, candidate.name.lower())
 
 
 def discover(
@@ -199,11 +203,17 @@ def discover(
     output_dir: Path,
     cache_dir: Path | None = None,
     client: DiscoveryHttpClient | None = None,
+    resume_from: Path | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> DiscoveryResult:
     config.validate()
     normalized_query = " ".join(query.split())
     if not 2 <= len(normalized_query) <= 300:
         raise ValueError("query must contain between 2 and 300 non-whitespace characters")
+    cached, source_observed_at = load_checkpoint(resume_from, normalized_query, config) if resume_from else ({}, {})
+    if config.refresh_cache:
+        cached.pop("pypi", None)
+        source_observed_at.pop("pypi", None)
     destination = prepare_output_directory(output_dir)
     started_at = _now()
     query_plan = plan_query(normalized_query)
@@ -215,9 +225,14 @@ def discover(
     cache = cache_dir or Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "brief2ship"
     candidates: list[Candidate] = []
     receipts: list[SourceReceipt] = []
+    observations: dict[str, tuple[list[Candidate], SourceReceipt]] = {}
     for source in config.sources:
+        if progress:
+            progress(f"{source}: {'reusing checkpoint' if source in cached else 'searching'}")
         try:
-            if source == "local":
+            if source in cached:
+                found, receipt = deepcopy(cached[source])
+            elif source == "local":
                 found, receipt = search_local(
                     normalized_query,
                     config.local_roots,
@@ -244,6 +259,12 @@ def discover(
             if item.source_rank is None:
                 item.source_rank = ordinal
         receipts.append(receipt)
+        observations[source] = (deepcopy(found), deepcopy(receipt))
+        if source not in cached:
+            source_observed_at[source] = _now()
+        write_checkpoint(destination, normalized_query, config, observations, source_observed_at=source_observed_at)
+        if progress:
+            progress(f"{source}: {receipt.status}; {len(found)} candidates; checkpoint saved")
     candidates = deduplicate_candidates(candidates)
     limitations = [
         "scores compare observed public metadata; missing evidence remains explicit",
@@ -263,8 +284,17 @@ def discover(
         shortlist = sorted(ranked, key=_inspection_priority)[: config.inspect_top]
         for index, candidate in enumerate(shortlist):
             feature = candidate.score.components.get("feature_match", 0) if candidate.score else 0
-            reason = f"slot {index + 1}: feature fit {feature:.2f}/25, then confidence-adjusted score"
-            candidate.inspection = inspector.inspect(candidate, run_tests=index < config.test_top)
+            reason = f"slot {index + 1}: observed blockers last, feature fit {feature:.2f}/25, then confidence-adjusted score"
+            if progress:
+                progress(f"inspecting candidate {index + 1}/{len(shortlist)}")
+            try:
+                candidate.inspection = inspector.inspect(candidate, run_tests=index < config.test_top)
+            except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+                candidate.inspection = InspectionResult(
+                    repository_url=candidate.repository_url or candidate.url,
+                    status="failed",
+                    warnings=[f"candidate inspection failed: {type(exc).__name__}: {exc}"],
+                )
             inspected.append((candidate, reason))
         ranked = rank_candidates(normalized_query, ranked)
     decision = decide(ranked, receipts)
@@ -287,6 +317,8 @@ def discover(
         "allow_untrusted_tests": config.allow_untrusted_tests,
         "refresh_cache": config.refresh_cache,
         "github_token_used": bool(config.github_token),
+        "resumed_from": str(resume_from.expanduser().resolve()) if resume_from else None,
+        "source_observed_at": source_observed_at,
     }
     return DiscoveryResult(
         query=normalized_query,

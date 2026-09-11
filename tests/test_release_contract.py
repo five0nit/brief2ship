@@ -19,7 +19,7 @@ class ReleaseContractTests(unittest.TestCase):
         init = (ROOT / "src/brief2ship/__init__.py").read_text(encoding="utf-8")
         skill = (ROOT / "skills/brief2ship/SKILL.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        self.assertEqual("0.7.0", version)
+        self.assertEqual("0.8.0", version)
         self.assertEqual(version, pyproject["project"]["version"])
         self.assertIn(f'__version__ = "{version}"', init)
         self.assertIn(f"version: {version}", skill)

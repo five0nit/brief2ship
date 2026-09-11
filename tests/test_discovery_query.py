@@ -66,6 +66,24 @@ class QueryPlanTests(unittest.TestCase):
         self.assertEqual("web scraper", plan.core_query)
         self.assertIn(query, plan.variants)
 
+    def test_domain_platform_and_language_are_preserved(self):
+        for query in ("android launcher", "Java parser", "Python package manager"):
+            with self.subTest(query=query):
+                self.assertEqual(query, plan_query(query).core_query)
+        self.assertEqual(("android",), plan_query("android launcher").constraints)
+        self.assertEqual((), plan_query("Java parser").constraints)
+        self.assertEqual((), plan_query("Python package manager").constraints)
+
+    def test_trailing_platform_requirement_does_not_dilute_functional_query(self):
+        plan = plan_query("Android launcher for Windows with no cloud")
+        self.assertEqual("Android launcher", plan.core_query)
+        self.assertEqual(("Android", "Windows", "no cloud"), plan.constraints)
+        self.assertIn(plan.original, plan.variants)
+
+    def test_explicit_versioned_runtime_remains_a_requirement(self):
+        plan = plan_query("web scraper using Python 3.11")
+        self.assertEqual(("Python 3.11",), plan.constraints)
+
 
 if __name__ == "__main__":
     unittest.main()

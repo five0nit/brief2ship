@@ -66,11 +66,14 @@ def decide(candidates: list[Candidate], sources: list[SourceReceipt]) -> Decisio
         or candidate.inspection.status != "inspected"
         or not candidate.normalized_license
         or not candidate.score
-        or (candidate.score.components.get("feature_match", 0) >= 8 and not (
+        # Low lexical overlap is an absence of evidence, not a demonstrated
+        # inability to meet the brief. Require an observed negative fact.
+        or not (
             candidate.archived or candidate.deprecated or candidate.disabled or candidate.gated
+            or any(check.status == "fail" for check in candidate.requirement_checks)
             or candidate.vulnerabilities or (candidate.inspection.test_receipt and
                 candidate.inspection.test_receipt.status in {"failed", "timeout", "oom", "signaled", "zero_tests"})
-        ))
+        )
     )]
     if missing:
         outcome.incomplete_reasons = [

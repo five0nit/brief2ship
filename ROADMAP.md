@@ -2,7 +2,7 @@
 
 Brief2Ship stays deliberately lean. Roadmap items must improve repo-first decisions, portable installation, evidence quality, or verified delivery without turning the project into a general-purpose agent framework.
 
-## Now — v0.6.x distribution and adoption
+## Distribution and adoption (carried forward from v0.6.x distribution and adoption)
 
 - publish signed, tagged Python distributions to PyPI through GitHub Trusted Publishing;
 - validate and publish `skills/brief2ship` through GitHub's Agent Skills workflow;
@@ -20,6 +20,14 @@ Brief2Ship stays deliberately lean. Roadmap items must improve repo-first decisi
 - synthetic task-quality regressions plus automated lint/type/wheel/sdist gates.
 
 Included in v0.7.0. PyPI publication and broader host validation remain separate work.
+
+## 0.8.0 source update
+
+Implemented locally: requirement evidence and safer abstention, bounded PyPI
+metadata retrieval with concept hints, manifest failure isolation, resumable
+provider checkpoints, portable first-run CLI and consistent agent handoff.
+See [the update guide](docs/update-0.8.0.md). Publication and hosted CI remain
+separate; human-reviewed quality measurement is still outstanding.
 
 ## Next evidence-quality work
 

@@ -14,6 +14,7 @@ from brief2ship.discovery_inspection import (
     RepositoryInspector,
     _bounded_tree_size,
     _clone_environment,
+    _detect_test_command,
     _gnu_timeout_binary,
     _safe_text,
     inspect_tree,
@@ -338,6 +339,106 @@ class InspectionTests(unittest.TestCase):
             result = inspect_tree(root, "https://github.com/example/js")
         self.assertEqual(1, result.dependency_count)
         self.assertNotIn("--runInBand", result.test_command)
+
+    def test_malformed_manifest_shapes_preserve_unknown_dependency_evidence(self):
+        cases = (
+            ("package.json", "[]"),
+            ("package.json", "null"),
+            ("package.json", "[" * 2_000 + "]" * 2_000),
+            ("package.json", '{"dependencies":[]}'),
+            ("package.json", '{"dependencies":null}'),
+            ("package.json", '{"dependencies":{"runtime":false}}'),
+            ("package.json", '{"optionalDependencies":"runtime"}'),
+            ("pyproject.toml", 'project = "bad"'),
+            ("pyproject.toml", 'tool = "bad"'),
+            ("pyproject.toml", '[tool]\npoetry = "bad"'),
+            ("pyproject.toml", '[project]\ndependencies = "runtime"'),
+            ("pyproject.toml", '[project]\ndependencies = [3]'),
+            ("pyproject.toml", '[project]\ndynamic = ["dependencies"]'),
+            ("pyproject.toml", '[tool.poetry]\ndependencies = ["runtime"]'),
+            ("pyproject.toml", '[tool.poetry.dependencies]\nruntime = false'),
+            ("Cargo.toml", 'dependencies = []'),
+            ("Cargo.toml", '[dependencies]\nruntime = false'),
+        )
+        for filename, manifest in cases:
+            with self.subTest(filename=filename, manifest=manifest), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / filename).write_text(manifest, encoding="utf-8")
+                result = inspect_tree(root, "file:///fixture")
+                self.assertEqual("inspected", result.status)
+                self.assertIsNone(result.dependency_count)
+                self.assertTrue(any("dependency declarations" in warning for warning in result.warnings))
+
+    def test_explicit_empty_dependency_declarations_remain_known(self):
+        for filename, manifest in (
+            ("package.json", '{"dependencies":{}}'),
+            ("pyproject.toml", '[project]\ndependencies = []'),
+            ("Cargo.toml", '[dependencies]'),
+        ):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / filename).write_text(manifest, encoding="utf-8")
+                result = inspect_tree(root, "file:///fixture")
+                self.assertEqual(0, result.dependency_count)
+
+    def test_invalid_manifest_does_not_turn_partial_dependency_sum_into_total(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "package.json").write_text('{"dependencies":{"runtime":"1"}}', encoding="utf-8")
+            (root / "pyproject.toml").write_text('project = "bad"', encoding="utf-8")
+            result = inspect_tree(root, "file:///fixture")
+            self.assertIsNone(result.dependency_count)
+            self.assertEqual(2, len(result.manifest_files))
+
+    def test_npm_test_detection_rejects_malformed_scripts(self):
+        for manifest in (
+            "[]", "null", '{"scripts":[]}', '{"scripts":"bad"}',
+            '{"scripts":{"test":[]}}', '{"scripts":{"test":true}}',
+            "[" * 2_000 + "]" * 2_000,
+        ):
+            with self.subTest(manifest=manifest), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "package.json").write_text(manifest, encoding="utf-8")
+                with patch("brief2ship.discovery_inspection.Path.is_file", return_value=True):
+                    command = _detect_test_command(root, ["package.json"], [])
+                self.assertEqual([], command)
+
+    def test_malformed_github_metadata_returns_failure_without_cloning(self):
+        for field, value in (("size", {}), ("license", ["bad"]), ("topics", [{}])):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary:
+                class MalformedClient(InspectorClient):
+                    def get_json(self, url, *, headers=None, max_bytes=5_000_000):
+                        data = {"size": 1, "archived": False, field: value}
+                        return data, HttpPayload(200, url, {}, dumps(data).encode())
+
+                candidate = Candidate(
+                    source="github", name="owner/tool", url="https://github.com/owner/tool",
+                    repository_url="https://github.com/owner/tool",
+                )
+                with patch("brief2ship.discovery_inspection.subprocess.run") as run:
+                    result = RepositoryInspector(MalformedClient(), Path(temporary)).inspect(candidate)
+                self.assertEqual("failed", result.status)
+                self.assertIn("inspection could not read candidate evidence", result.warnings[0])
+                run.assert_not_called()
+
+    def test_readme_feature_evidence_keeps_terms_beyond_alphabetical_first_200(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            words = ["zebra", *[f"alpha{index}" for index in range(250)], "websocket"]
+            (root / "README.md").write_text(" ".join(words), encoding="utf-8")
+            result = inspect_tree(root, "file:///fixture")
+            self.assertEqual(words, result.feature_terms)
+            self.assertEqual("inspected", result.status)
+
+    def test_readme_feature_evidence_reports_bounded_source_order_truncation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text("zebra alpha zebra websocket extra", encoding="utf-8")
+            with patch("brief2ship.discovery_inspection._MAX_FEATURE_TERMS", 3):
+                result = inspect_tree(root, "file:///fixture")
+            self.assertEqual(["zebra", "alpha", "websocket"], result.feature_terms)
+            self.assertEqual("partial", result.status)
+            self.assertTrue(any("feature evidence capped" in warning for warning in result.warnings))
 
     def test_repository_inspector_blocks_oversized_repository_before_clone(self):
         class OversizedClient(InspectorClient):

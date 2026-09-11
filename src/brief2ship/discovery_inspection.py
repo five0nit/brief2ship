@@ -44,6 +44,7 @@ _MAX_ENTRIES_PER_DIRECTORY = 10_000
 _MAX_INSPECTION_DIRECTORIES = 20_000
 _MAX_INSPECTION_DEPTH = 32
 _MAX_INSPECTION_SECONDS = 30.0
+_MAX_FEATURE_TERMS = 4_096
 
 
 def _gnu_timeout_binary() -> str | None:
@@ -176,6 +177,82 @@ def _detect_license(root: Path) -> str | None:
     return read_license_evidence(root, _safe_text)
 
 
+def _valid_poetry_dependency(value: object) -> bool:
+    """Recognize supported static declarations; unfamiliar shapes stay unknown."""
+    if isinstance(value, str):
+        return True
+    declarations = value if isinstance(value, list) else [value]
+    if not declarations:
+        return False
+    for declaration in declarations:
+        if not isinstance(declaration, dict) or not declaration:
+            return False
+        for key, member in declaration.items():
+            if key in {"optional", "allow-prereleases", "develop"}:
+                if not isinstance(member, bool):
+                    return False
+            elif key == "extras":
+                if not isinstance(member, list) or any(not isinstance(extra, str) for extra in member):
+                    return False
+            elif key in {"version", "python", "platform", "markers", "source", "git", "branch", "tag", "rev", "path", "url"}:
+                if not isinstance(member, str):
+                    return False
+            else:
+                return False
+    return True
+
+
+def _requirements_dependency_count(text: str) -> int | None:
+    """Count only a static subset; includes, options and markers stay unknown."""
+    name = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+    extras = rf"(?:\[{name}(?:\s*,\s*{name})*\])?"
+    version = r"(?:===|==|!=|~=|<=|>=|<|>)\s*[A-Za-z0-9.*+!_-]+"
+    declaration = rf"{name}{extras}(?:\s*{version}(?:\s*,\s*{version})*)?"
+    count = 0
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if not re.fullmatch(declaration, line):
+            return None
+        count += 1
+    return count
+
+
+def _go_dependency_count(text: str) -> int | None:
+    """Recognize simple module/require syntax without executing Go tooling."""
+    module_path = r"[A-Za-z0-9._~+/-]+"
+    version = r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
+    count = 0
+    in_require = False
+    has_module = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line:
+            continue
+        if in_require:
+            if line == ")":
+                in_require = False
+                continue
+            dependency = line
+        elif line == "require (":
+            in_require = True
+            continue
+        elif re.fullmatch(rf"module\s+{module_path}", line) and not has_module:
+            has_module = True
+            continue
+        elif re.fullmatch(r"go\s+[0-9]+\.[0-9]+(?:\.[0-9]+)?", line):
+            continue
+        elif line.startswith("require ") or line.startswith("require\t"):
+            dependency = line.split(maxsplit=1)[1]
+        else:
+            return None
+        if not re.fullmatch(rf"{module_path}\s+{version}", dependency):
+            return None
+        count += 1
+    return count if has_module and not in_require else None
+
+
 def _dependencies_from_manifest(path: Path) -> int | None:
     text = _safe_text(path)
     if not text:
@@ -184,34 +261,54 @@ def _dependencies_from_manifest(path: Path) -> int | None:
     try:
         if name == "package.json":
             data = json.loads(text)
-            return sum(
-                len(data.get(key) or {})
-                for key in ("dependencies", "peerDependencies", "optionalDependencies")
-                if isinstance(data.get(key) or {}, dict)
-            )
+            if not isinstance(data, dict):
+                return None
+            count = 0
+            for key in ("dependencies", "peerDependencies", "optionalDependencies"):
+                dependencies = data.get(key, {})
+                if not isinstance(dependencies, dict) or any(
+                    not isinstance(value, str) for value in dependencies.values()
+                ):
+                    return None
+                count += len(dependencies)
+            return count
         if name in {"pyproject.toml", "cargo.toml"}:
             data = tomllib.loads(text)
             if name == "pyproject.toml":
-                project = data.get("project") or {}
-                poetry = ((data.get("tool") or {}).get("poetry") or {})
-                poetry_dependencies = poetry.get("dependencies") or {}
-                poetry_count = (
-                    sum(1 for key in poetry_dependencies if str(key).lower() != "python")
-                    if isinstance(poetry_dependencies, dict)
-                    else 0
+                project = data.get("project", {})
+                tool = data.get("tool", {})
+                if not isinstance(project, dict) or not isinstance(tool, dict):
+                    return None
+                poetry = tool.get("poetry", {})
+                if not isinstance(poetry, dict):
+                    return None
+                dependencies = project.get("dependencies", [])
+                dynamic = project.get("dynamic", [])
+                poetry_dependencies = poetry.get("dependencies", {})
+                if (
+                    not isinstance(dependencies, list)
+                    or any(not isinstance(value, str) for value in dependencies)
+                    or not isinstance(dynamic, list)
+                    or any(not isinstance(value, str) for value in dynamic)
+                    or "dependencies" in dynamic
+                    or not isinstance(poetry_dependencies, dict)
+                    or any(not _valid_poetry_dependency(value) for value in poetry_dependencies.values())
+                ):
+                    return None
+                return len(dependencies) + sum(
+                    1 for key in poetry_dependencies if key.lower() != "python"
                 )
-                return len(project.get("dependencies") or []) + poetry_count
-            dependencies = data.get("dependencies") or {}
-            return len(dependencies) if isinstance(dependencies, dict) else None
+            dependencies = data.get("dependencies", {})
+            if not isinstance(dependencies, dict) or any(
+                not isinstance(value, (str, dict)) for value in dependencies.values()
+            ):
+                return None
+            return len(dependencies)
         if name.startswith("requirements") and name.endswith(".txt"):
-            return len(
-                [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith(("#", "-r", "--"))]
-            )
+            return _requirements_dependency_count(text)
         if name == "go.mod":
-            direct = len(re.findall(r"(?m)^\s*require\s+\S+\s+v\S+", text))
-            blocks = re.findall(r"(?ms)^require\s*\((.*?)^\)", text)
-            return direct + sum(len([line for line in block.splitlines() if line.strip()]) for block in blocks)
-    except (json.JSONDecodeError, tomllib.TOMLDecodeError, TypeError, ValueError):
+            return _go_dependency_count(text)
+    except (json.JSONDecodeError, tomllib.TOMLDecodeError, TypeError, ValueError, RecursionError):
         return None
     return None
 
@@ -221,10 +318,11 @@ def _detect_test_command(root: Path, manifests: list[str], test_files: list[str]
     if "package.json" in names and Path("/usr/bin/npm").is_file():
         try:
             package = json.loads(_safe_text(root / "package.json"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             package = {}
-        script = (package.get("scripts") or {}).get("test") if isinstance(package, dict) else None
-        if script and "no test specified" not in str(script).lower():
+        scripts = package.get("scripts", {}) if isinstance(package, dict) else {}
+        script = scripts.get("test") if isinstance(scripts, dict) else None
+        if isinstance(script, str) and script.strip() and "no test specified" not in script.lower():
             return ["/usr/bin/npm", "test", "--offline", "--ignore-scripts"]
     if "cargo.toml" in names and Path("/usr/bin/cargo").is_file():
         return ["/usr/bin/cargo", "test", "--offline"]
@@ -239,17 +337,21 @@ def _detect_test_command(root: Path, manifests: list[str], test_files: list[str]
 def inspect_tree(root: Path, repository_url: str) -> InspectionResult:
     result = InspectionResult(repository_url=repository_url, clone_path=str(root), status="inspected")
     dependency_counts: list[int] = []
+    dependency_evidence_incomplete = False
     file_count = 0
     language_suffixes: set[str] = set()
-    feature_terms: set[str] = set()
+    feature_terms: dict[str, None] = {}
     deadline = time.monotonic() + _MAX_INSPECTION_SECONDS
     directories = 0
     queue: deque[tuple[Path, int]] = deque([(root, 0)])
     stop = False
     warned: set[str] = set()
 
-    def partial(key: str, message: str) -> None:
+    def partial(key: str, message: str, *, traversal_incomplete: bool = True) -> None:
+        nonlocal dependency_evidence_incomplete
         result.status = "partial"
+        if traversal_incomplete:
+            dependency_evidence_incomplete = True
         if key not in warned:
             warned.add(key)
             result.warnings.append(message)
@@ -319,6 +421,9 @@ def inspect_tree(root: Path, repository_url: str) -> InspectionResult:
                 count = _dependencies_from_manifest(path)
                 if count is not None:
                     dependency_counts.append(count)
+                else:
+                    dependency_evidence_incomplete = True
+                    result.warnings.append(f"dependency declarations could not be determined: {relative}")
             if lower.startswith(("tests/", "test/", "spec/", "specs/")) or re.search(r"(^|/)(test_|.*[._]test\.)", lower):
                 if len(result.test_files) < 200:
                     result.test_files.append(relative)
@@ -328,15 +433,27 @@ def inspect_tree(root: Path, repository_url: str) -> InspectionResult:
                 if len(result.docs_files) < 200:
                     result.docs_files.append(relative)
                 if filename.lower().startswith("readme"):
-                    feature_terms.update(re.findall(r"[a-z0-9][a-z0-9_.-]{1,40}", _safe_text(path).lower()))
+                    for match in re.finditer(r"[a-z0-9][a-z0-9_.-]{1,40}", _safe_text(path).lower()):
+                        term = match.group()
+                        if term in feature_terms:
+                            continue
+                        if len(feature_terms) >= _MAX_FEATURE_TERMS:
+                            partial(
+                                "feature-terms", f"README feature evidence capped at {_MAX_FEATURE_TERMS} terms",
+                                traversal_incomplete=False,
+                            )
+                            break
+                        feature_terms[term] = None
             if lower.startswith(("examples/", "example/", "samples/", "demo/")):
                 if len(result.example_files) < 200:
                     result.example_files.append(relative)
-    result.dependency_count = sum(dependency_counts) if dependency_counts else None
+    result.dependency_count = (
+        sum(dependency_counts) if dependency_counts and not dependency_evidence_incomplete else None
+    )
     result.license = _detect_license(root)
     suffix_map = {".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript", ".rs": "Rust", ".go": "Go", ".java": "Java", ".kt": "Kotlin"}
     result.languages = sorted({suffix_map[value] for value in language_suffixes if value in suffix_map})
-    result.feature_terms = sorted(feature_terms)[:200]
+    result.feature_terms = list(feature_terms)
     result.test_command = _detect_test_command(root, result.manifest_files, result.test_files)
     try:
         process = subprocess.run(
@@ -546,9 +663,32 @@ class RepositoryInspector:
             return str(exc)
         if not isinstance(data, dict):
             return "GitHub repository metadata was not an object"
+        # Validate the full repository payload before publishing any fields to
+        # the candidate: discovery reranks it even when inspection fails later.
+        for field in ("private", "archived"):
+            value = data.get(field)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"GitHub repository {field} must be a boolean")
         if data.get("private"):
             return "private GitHub repositories are outside the public discovery policy"
-        candidate.repository_size_kb = int(data.get("size") or 0)
+        for field in ("size", "stargazers_count", "forks_count", "subscribers_count", "open_issues_count"):
+            value = data.get(field)
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+                raise ValueError(f"GitHub repository {field} must be a non-negative integer")
+        topics = data.get("topics", [])
+        license_data = data.get("license")
+        if not isinstance(topics, list) or any(not isinstance(value, str) for value in topics):
+            raise ValueError("GitHub repository topics must be a list of strings")
+        if license_data is not None and not isinstance(license_data, dict):
+            raise ValueError("GitHub repository license must be an object or null")
+        for field in ("language", "pushed_at", "homepage"):
+            value = data.get(field)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"GitHub repository {field} must be a string or null")
+        spdx_id = (license_data or {}).get("spdx_id")
+        if spdx_id is not None and not isinstance(spdx_id, str):
+            raise ValueError("GitHub repository license spdx_id must be a string or null")
+        candidate.repository_size_kb = data.get("size")
         candidate.archived = bool(data.get("archived"))
         candidate.updated_at = data.get("pushed_at") or candidate.updated_at
         candidate.stars = int(data.get("stargazers_count") or candidate.stars or 0)
@@ -558,9 +698,8 @@ class RepositoryInspector:
         candidate.open_issues_exact = False
         candidate.homepage = str(data.get("homepage") or candidate.homepage or "") or None
         candidate.language = data.get("language") or candidate.language
-        candidate.topics = sorted(set(candidate.topics + [str(value) for value in data.get("topics") or []]))
-        license_data = data.get("license") or {}
-        candidate.license = candidate.license or str(license_data.get("spdx_id") or "") or None
+        candidate.topics = sorted(set(candidate.topics + topics))
+        candidate.license = candidate.license or str((license_data or {}).get("spdx_id") or "") or None
         contributors_endpoint = f"{endpoint}/contributors?per_page=1&anon=true"
         try:
             contributors, contributors_payload = self.client.get_json(
@@ -675,6 +814,16 @@ class RepositoryInspector:
         return result
 
     def inspect(self, candidate: Candidate, *, run_tests: bool = False) -> InspectionResult:
+        try:
+            return self._inspect_candidate(candidate, run_tests=run_tests)
+        except (DiscoverySourceError, OSError, ValueError, TypeError, AttributeError, OverflowError, RecursionError) as exc:
+            return InspectionResult(
+                repository_url=candidate.repository_url or candidate.url,
+                status="failed",
+                warnings=[f"inspection could not read candidate evidence ({type(exc).__name__}): {exc}"],
+            )
+
+    def _inspect_candidate(self, candidate: Candidate, *, run_tests: bool = False) -> InspectionResult:
         if candidate.deprecated or candidate.gated or candidate.disabled:
             return InspectionResult(
                 repository_url=candidate.repository_url or "",
